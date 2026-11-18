@@ -793,7 +793,8 @@ const THEMES=[
   {key:'b',name:'Temple of Still Bells',jp:'静鐘寺',paper:'#c9d1d2',shade:'#a7b2b6',ink:'#17160f',red:'#b8291d',line:'#b8291d',halo:'rgba(201,209,210,.55)',ui:'#17160f',dark:0},
   {key:'c',name:'The Castle at Night',jp:'夜の城',paper:'#10131d',shade:'#1d2233',ink:'#e8e2d0',red:'#e8472c',line:'#e8472c',halo:'rgba(16,19,29,.6)',ui:'#e8e2d0',dark:1},
   {key:'d',name:'The Ash Gate',jp:'灰の門',paper:'#a92a17',shade:'#7f1a0d',ink:'#120a08',red:'#f2e5c9',line:'#f2e5c9',halo:'rgba(169,42,23,.55)',ui:'#f2e5c9',dark:1},
-  {key:'e',name:'Rain on the River',jp:'雨の川',mark:'川',paper:'#c9c6bd',shade:'#a8a397',ink:'#1b1915',red:'#b8331f',line:'#b8331f',halo:'rgba(201,198,189,.55)',ui:'#1b1915',dark:0}
+  {key:'e',name:'Rain on the River',jp:'雨の川',mark:'川',paper:'#c9c6bd',shade:'#a8a397',ink:'#1b1915',red:'#b8331f',line:'#b8331f',halo:'rgba(201,198,189,.55)',ui:'#1b1915',dark:0},
+  {key:'f',name:'Mountain Shrine',jp:'山の社',mark:'社',paper:'#d3cbb8',shade:'#b4aa94',ink:'#1a1510',red:'#b8331f',line:'#b8331f',halo:'rgba(211,203,184,.55)',ui:'#1a1510',dark:0}
 ];
 function makePaper(w,h,th,seed){
   const c=mk(w,h),g=c.getContext('2d'),r=mulberry(seed||9);
@@ -822,6 +823,7 @@ function makePaper(w,h,th,seed){
 }
 function paintDecor(g,th,seed,F_W,F_H){
   if(th.key&&th.key[0]==='e'){paintDecorRiver(g,th,seed,F_W,F_H);return}
+  if(th.key&&th.key[0]==='f'){paintDecorShrine(g,th,seed,F_W,F_H);return}
   const r=mulberry(seed*131+7),ink=th.ink;
   const stalk=(x,top,w,lean)=>{
     for(let y=F_H+50;y>top;){const h=62+r()*34,nx=x+lean*h/F_H*200;
@@ -1301,6 +1303,588 @@ function drawDragonSeg(g,e,x,y,flip){
 /* ===== END CHAPTER 5 ART ===== */
 FOE_BOX.twin=FOE_BOX.twin||FOE_BOX.foot;ART.twin=ART.twin||ART.foot;
 FOE_BOX.dragon=FOE_BOX.dragon||FOE_BOX.dragonHead||FOE_BOX.captain;ART.dragon=ART.dragon||ART.dragonHead||ART.captain;
+
+/* ===== CH6 ART (art lead, art-ch6b: drop-in for the CH6 ART PLACEHOLDERS) =====
+   Drawing only: nothing here reads or changes rules, hit paths, timing, ink cost or the solver.
+   Same names and argument orders as the lead's placeholders; the art itself lives in internal helpers.
+   World units (the 400x640 page); g is in the world transform (setWorld). Everything is painted with
+   brushOn()/inkRibbon()/shapeOn()/blotOn() and baked once (most at the device scale, blitted 1:1);
+   per frame: drawImage blits, one clip for a closing enso, a short inkRibbon while a wall is being written.
+   No shadowBlur, no flash, no glow, no cyan/teal.
+
+   PUBLIC (lead's signatures)
+     paintDecorShrine(g,th,seed,F_W,F_H)      backdrop: ridges, cedars, shrine on steps, lanterns, pine, soft mist.
+                                              On the boss papers (f1 f2 f3) the Calligrapher stands at the upper left.
+     drawTorii(g,gate,th,seed)                gate {x,y,ux,uy,ax,ay,bx,by}: posts stand on a and b (the 70 px opening),
+                                              vermilion chevrons point along (ux,uy). Body never drawn upside down.
+     drawGhostLord(g,e,x,y,flip,dead)         x,y = foot (centre + FOOT_CH6.ghostlord); broken enso round the centre.
+                                              dead = dissolving (k = e.dk if set, else 0.65): closed enso, figure thinning.
+     drawTanuki(g,e,x,y,flip)                 reach ring (50) under him + the figure
+     drawInkWell(g,e,x,y,used)                suzuri; used = dry well
+     paintFog(g,th,tip,radius,F_W,F_H,mask)   pre-baked fog with a feathered hole at tip (null = no hole).
+                                              mask: optional [{x,y}] (or {seen:[...]}) spots kept thinner.
+     drawCalligrapherWall(g,wall,t,ahead,th)  wall {ax,ay,bx,by,t}: nothing before t-ahead; telegraph = dotted bar and
+                                              dotted kanji; at wall.t the bar is painted at once (covers the 11 px rule),
+                                              kanji written in stroke order over 0.45 s, then cached.
+   EXTRA (optional for the lead)
+     drawEchoPath(g,pts) faint dotted path; drawEchoHead(g,p) the Black Brush's brush at the head of the echo;
+     drawGhostDissolve(g,e,x,y,k); paintInkWellSplash(g,x,y,k); drawCalligrapher(g,e,x,y,flip); resetFog().
+   Sprites for foeSprite(): ghostlord, tanuki, inkwell (arg 1 = dry), cseal (seal talisman 画), calligrapher, echoBrush.
+   THEME 'f' Mountain Shrine 山の社, mark 社; dusk paper #bdb3ad; CH6_PHASE_THEMES f1 f2 f3 for the Calligrapher.
+*/
+const CH6_THEME={key:'f',name:'Mountain Shrine',jp:'山の社',mark:'社',paper:'#bdb3ad',shade:'#a0958e',ink:'#1c1714',red:'#b3301d',line:'#b3301d',halo:'rgba(189,179,173,.55)',ui:'#1c1714',dark:0};
+{const t=THEMES.find(t=>t.key==='f');if(t)Object.assign(t,CH6_THEME);else THEMES.push(CH6_THEME)}
+const CH6_PHASE_THEMES=[
+  Object.assign({},CH6_THEME,{key:'f1',paper:'#c3b9b2',shade:'#a59a93'}),
+  Object.assign({},CH6_THEME,{key:'f2',paper:'#b4a9a2',shade:'#978b84'}),
+  Object.assign({},CH6_THEME,{key:'f3',paper:'#a69a92',shade:'#8a7e77'})
+];
+const FOOT_CH6={ghostlord:40,tanuki:36,inkwell:24,cseal:34};
+const FOG_COL='#8a8070',FOG_PAPER='#c8c0ae';
+/* centre-above-foot of each painted figure (world px), used to sit the art on the lead's foot points */
+const C6_MID={ghostlord:40,tanuki:33,inkwell:24},ENSO_R=48,ECHO_DELAY=.8,WARM='#c4622d';
+const CH6_CACHE=new Map();
+function _ch6Get(k,fn){let v=CH6_CACHE.get(k);if(!v){if(CH6_CACHE.size>96)CH6_CACHE.clear();v=fn();CH6_CACHE.set(k,v)}return v}
+function _ch6c(w,h,K){const c=mk(w*K,h*K),g=c.getContext('2d');g.scale(K,K);return{c,g}}
+function _ch6A(hex,a){const n=parseInt(hex.slice(1),16);return'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')'}
+function _ch6pal(){return PAL||palOf(TH)}
+function _ch6K(g){const m=g.getTransform();return Math.round(Math.hypot(m.a,m.b)*100)/100}
+/* bake a drawing at the device scale, rotated, centred on its anchor; blitted 1:1 by _ch6Blit */
+function _ch6Bake(K,R,rot,draw){const S=Math.ceil(R*2*K),c=mk(S,S),g=c.getContext('2d');g.setTransform(K,0,0,K,S/2,S/2);if(rot)g.rotate(rot);draw(g);return{c,h:S/2}}
+function _ch6Blit(g,sp,x,y){const m=g.getTransform(),X=m.a*x+m.c*y+m.e,Y=m.b*x+m.d*y+m.f;g.save();g.setTransform(1,0,0,1,0,0);g.drawImage(sp.c,Math.round(X-sp.h),Math.round(Y-sp.h));g.restore()}
+/* the chapter mark 山: centre stroke, left stroke turning along the base, right stroke */
+function paintShrineMark(g,x,y,s,col,seed){
+  const r=mulberry(seed||5),o={c:col,rnd:r};
+  g.save();g.translate(x,y);g.scale(s/100,s/100);
+  brushOn(g,[[2,-50,.85],[0,-12,1],[1,30,1],[0,40,.8]],14,Object.assign({dry:.35,tin:.12,tout:.2},o));
+  brushOn(g,[[-38,-18,.8],[-38,10,1],[-37,34,1],[-20,36,1],[14,35,1],[40,34,.85]],12.5,Object.assign({dry:.4,tin:.1,tout:.18},o));
+  brushOn(g,[[38,-26,.85],[39,4,1],[38,36,.9],[38,48,.55]],13,Object.assign({dry:.45,tin:.12,tout:.35},o));
+  g.restore();
+}
+/* backdrop: same low-alpha layering as the other chapters, seeded per page */
+function paintDecorShrine(g,th,seed,F_W,F_H){
+  const r=mulberry(seed*131+43),ink=th.ink,b=(p,w,o)=>brushOn(g,p,w,Object.assign({c:ink,rnd:r},o)),mist=(p,w,a)=>_ch6Band(g,p.map(q=>[q[0],q[1],1]),w,th.paper,a*1.15,r);
+  g.save();
+  /* far ridges: soft wash masses with an uneven edge, one dry contour, a few slope strokes */
+  const px=150+r()*80,ridge=[[-40,170],[px-120,124],[px-60,98],[px,56],[px+50,96],[px+120,82],[px+190,120],[460,150]];
+  g.globalAlpha=.045;shapeOn(g,ridge.concat([[460,330],[-40,330]]),{c:ink,rnd:r,j:6});
+  g.globalAlpha=.03;shapeOn(g,[[-40,214],[60,176],[150,196],[250,160],[330,184],[460,170],[460,330],[-40,330]],{c:ink,rnd:r,j:6});
+  g.globalAlpha=.11;b(ridge.slice(1,6),2.6,{dry:.45,tin:.1,tout:.4});
+  for(let i=0;i<9;i++){const t=r(),side=r()<.5?-1:1,x=px+side*(14+t*120),y=56+t*70+r()*30;g.globalAlpha=.05+r()*.04;b([[x,y],[x+side*(6+r()*10),y+16+r()*20]],2+r()*2,{dry:.6,tin:.1,tout:.6})}
+  /* cedar (sugi) silhouettes: dark tapering crowns built from drooping tiers, three depths */
+  const cedar=(x,top,h,a,w0)=>{g.globalAlpha=a*.5;shapeOn(g,[[x,top],[x+w0*.55,top+h*.85],[x,top+h*.92],[x-w0*.55,top+h*.85]],{c:ink,rnd:r,j:3});
+    g.globalAlpha=a;b([[x,top+h+20],[x+(r()-.5)*3,top]],3,{dry:.4,tin:.3,tout:.1});
+    for(let y=top+4;y<top+h;y+=6+r()*4){const k=(y-top)/h,w=w0*(.2+k*.8)*(.85+r()*.3);g.globalAlpha=a*(.6+r()*.4);
+      b([[x+1,y-3],[x-w*.5,y+w*.15],[x-w,y+w*.42]],3.4+k*3.2,{dry:.45,tin:.15,tout:.75});b([[x-1,y-3],[x+w*.5,y+w*.15],[x+w,y+w*.42]],3.4+k*3.2,{dry:.45,tin:.15,tout:.75})}};
+  [[18,150,230,.08,28],[56,196,200,.065,22],[352,140,250,.085,30],[390,190,200,.065,22],[300,214,140,.045,18],[100,230,110,.04,16]].forEach(([x,t,h,a,w])=>cedar(x+(r()-.5)*10,t,h,a,w));
+  mist([[-40,300],[120,286],[260,300],[440,284]],60,.32);
+  /* the shrine: a heavy curved roof mass with a gable, posts, a veranda line; seen through mist */
+  const sx=246+r()*24,sy=232;
+  g.globalAlpha=.075;shapeOn(g,[[sx-74,sy-24],[sx-48,sy-36],[sx-20,sy-52],[sx,sy-58],[sx+20,sy-52],[sx+48,sy-36],[sx+74,sy-24],[sx+40,sy-28],[sx,sy-32],[sx-40,sy-28]],{c:ink,rnd:r,j:1.5});
+  g.globalAlpha=.16;b([[sx-76,sy-22,.5],[sx-46,sy-34,1],[sx-18,sy-52,1],[sx,sy-58,1.05],[sx+18,sy-52,1],[sx+46,sy-34,1],[sx+76,sy-22,.5]],4.2,{dry:.35,tin:.1,tout:.1});
+  g.globalAlpha=.12;b([[sx-14,sy-44],[sx,sy-52],[sx+14,sy-44]],2.4,{dry:.3,tin:.1,tout:.1});b([[sx-6,sy-62],[sx+6,sy-62]],4,{dry:.3,tin:.1,tout:.1});
+  g.globalAlpha=.05;shapeOn(g,[[sx-44,sy-28],[sx+44,sy-28],[sx+46,sy+2],[sx-46,sy+2]],{c:ink,rnd:r,j:2.2});
+  g.globalAlpha=.13;[-42,-14,14,42].forEach(o=>b([[sx+o,sy-28],[sx+o+(r()-.5),sy+2]],3,{dry:.45,tin:.02,tout:.1}));
+  g.globalAlpha=.1;b([[sx-52,sy+3],[sx+52,sy+3]],3.4,{dry:.5,tin:.05,tout:.05});
+  g.globalAlpha=.12;shapeOn(g,[[sx-10,sy-26],[sx+10,sy-26],[sx+11,sy-4],[sx-11,sy-4]],{c:WARM,rnd:r,j:.8});
+  /* stone steps: a few slabs, each a soft wash with one dry front edge, curving down to the lower left */
+  for(let i=0;i<9;i++){const t=i/8,cx=sx-8-t*t*150-t*30,cy=sy+12+t*170+t*t*60,w=24+t*44,d=4+t*5;
+    g.globalAlpha=.035;shapeOn(g,[[cx-w,cy-d],[cx+w,cy-d],[cx+w+1,cy],[cx-w-1,cy]],{c:ink,rnd:r,j:1.2});
+    g.globalAlpha=.08+t*.04;b([[cx-w,cy],[cx-w*.3,cy+.6],[cx+w*.4,cy-.4],[cx+w,cy]],1.6+t*1.6,{dry:.5+r()*.2,tin:.08,tout:.12})}
+  /* two stone lanterns on the steps, windows washed warm (paint, not light) */
+  const lant=(x,y,s,a)=>{g.globalAlpha=a;b([[x-12*s,y],[x+12*s,y]],4*s,{dry:.4,tin:.05,tout:.05});b([[x,y-1],[x,y-26*s]],5*s,{dry:.5,tin:0,tout:0});
+    b([[x-10*s,y-28*s],[x+10*s,y-28*s]],3.4*s,{dry:.3,tin:.05,tout:.05});
+    g.globalAlpha=a*.55;shapeOn(g,[[x-7*s,y-30*s],[x+7*s,y-30*s],[x+7*s,y-44*s],[x-7*s,y-44*s]],{c:WARM,rnd:r,j:.8*s});
+    g.globalAlpha=a;b([[x-8*s,y-30*s],[x-8*s,y-44*s]],1.8*s,{dry:.3,tin:0,tout:0});b([[x+8*s,y-30*s],[x+8*s,y-44*s]],1.8*s,{dry:.3,tin:0,tout:0});
+    b([[x-18*s,y-44*s,.5],[x-7*s,y-52*s,1],[x+7*s,y-52*s,1],[x+18*s,y-44*s,.5]],4.6*s,{dry:.3,tin:.1,tout:.1});b([[x,y-53*s],[x,y-60*s]],3*s,{dry:.2,tin:0,tout:.6})};
+  lant(sx-74,sy+64,.9,.15);lant(sx+52,sy+70,.95,.15);
+  mist([[-40,420],[100,404],[230,424],[440,408]],70,.26);
+  /* pine, lower right: a leaning trunk mass with bark dabs, flat cloud-layer needles */
+  const tx=330+r()*30,tr=[[tx+40,F_H+30],[tx+20,F_H-80],[tx-14,F_H-160],[tx-60,F_H-200]];
+  g.globalAlpha=.09;shapeOn(g,ribbon(tr.map((p,i)=>[p[0],p[1],1-i*.18]),15),{c:ink,rnd:r,j:1});
+  g.globalAlpha=.12;b(tr,2,{dry:.55,tin:.05,tout:.3});
+  for(let i=0;i<12;i++){const t=r()*.9,i0=Math.min(2,Math.floor(t*3)),u=t*3-i0,x=tr[i0][0]+(tr[i0+1][0]-tr[i0][0])*u,y=tr[i0][1]+(tr[i0+1][1]-tr[i0][1])*u;
+    g.globalAlpha=.1;b([[x-4,y+2],[x+3,y-2]],2.4,{dry:.45,tin:.2,tout:.4})}
+  g.globalAlpha=.12;b([[tx+8,F_H-120],[tx+46,F_H-150],[tx+70,F_H-152]],4,{dry:.5,tin:.05,tout:.4});
+  [[tx-70,F_H-206,46],[tx-10,F_H-176,38],[tx+56,F_H-158,34],[tx-36,F_H-146,30]].forEach(([x,y,w])=>{
+    for(let k=0;k<12;k++){const u=(k/11-.5)*2,hx=x+u*w,hy=y-Math.cos(u*1.2)*6;g.globalAlpha=.08+r()*.05;
+      b([[hx,hy+5],[hx+(r()-.5)*4,hy-6]],1.2,{dry:.3,tin:.1,tout:.6});b([[hx-3,hy+4],[hx-7,hy-3]],1,{dry:.3,tin:.1,tout:.6});b([[hx+3,hy+4],[hx+7,hy-3]],1,{dry:.3,tin:.1,tout:.6})}
+    g.globalAlpha=.06;b([[x-w,y+6],[x,y+2],[x+w,y+6]],6,{dry:.75,tin:.1,tout:.1})});
+  /* grass and stones at the foot of the page */
+  for(let i=0;i<16;i++){const x=r()*400,y=F_H-4-r()*40,h=10+r()*18,s=r()<.5?-1:1;g.globalAlpha=.1+r()*.06;b([[x,y],[x+s*h*.3,y-h]],1.8,{dry:.3,tin:0,tout:.7})}
+  g.restore();g.globalAlpha=1;
+  /* on the Calligrapher's papers he stands at the upper left, above the play */
+  if(th.key==='f1'||th.key==='f2'||th.key==='f3')drawSprite(g,foeSprite('calligrapher',palOf(th)),54,250,SCALE*.72,false,.92);
+}
+/* ---- torii: posts on the two ends of the opening, black kasagi, vermilion posts and nuki, shimenawa with shide ----
+   local frame: origin = centre of the opening on the threshold, posts at x = +-w/2, the gate rises toward -y */
+function _toriiBody(g,pal,w){
+  const H=w*.95,hw=w/2,r=mulberry((w|0)*7+3),B=(p,ww,col,o)=>brushOn(g,p,ww,Object.assign({c:col,rnd:r},o));
+  g.globalAlpha=.12;B([[-hw-12,2],[0,4],[hw+12,2]],12,pal.ink,{dry:.8,tin:.1,tout:.1});g.globalAlpha=1;
+  [-1,1].forEach(s=>{
+    B([[s*(hw+1),3,1],[s*(hw-1),-H*.5,1],[s*(hw-3),-H*.86,.95]],7.2,pal.red,{dry:.28,tin:.02,tout:.04});
+    B([[s*(hw+3.6),2],[s*(hw+1),-H*.84]],1.4,pal.ink,{dry:.55,tin:.05,tout:.2});
+    B([[s*(hw+5),4],[s*(hw-4),4]],6,pal.ink,{dry:.35,tin:.1,tout:.1});
+  });
+  B([[-hw-12,-H*.6,.9],[0,-H*.61,1],[hw+12,-H*.6,.9]],5.2,pal.red,{dry:.3,tin:.03,tout:.03});
+  B([[-hw-12,-H*.6+2.5],[hw+12,-H*.6+2.5]],1,pal.ink,{dry:.6,tin:.05,tout:.05});
+  B([[0,-H*.6],[0,-H*.82]],3.6,pal.red,{dry:.3,tin:0,tout:0});
+  B([[-hw-14,-H*.84,.9],[0,-H*.85,1],[hw+14,-H*.84,.9]],5,pal.red,{dry:.25,tin:.04,tout:.04});
+  B([[-hw-28,-H*1.06,.4],[-hw-14,-H*.96,.85],[0,-H*.905,1.1],[hw+14,-H*.96,.85],[hw+28,-H*1.06,.4]],8,pal.ink,{dry:.3,tin:.08,tout:.08});
+  g.globalAlpha=.5;B([[-hw-18,-H*.955],[0,-H*.94],[hw+18,-H*.955]],2,pal.ink,{dry:.6,tin:.1,tout:.1});g.globalAlpha=1;
+  const sag=w*.1,rp=[];for(let i=0;i<=10;i++){const t=i/10;rp.push([-hw+3+t*(w-6),-H*.5+Math.sin(t*Math.PI)*sag])}
+  B(rp,2.6,pal.ink,{dry:.55,tin:.02,tout:.02});
+  for(let i=1;i<10;i+=2){const p=rp[i];g.globalAlpha=.75;B([[p[0]-1.2,p[1]],[p[0]+1.4,p[1]+2.4]],1.6,pal.ink,{dry:.2,tin:0,tout:0});g.globalAlpha=1}
+  [.25,.5,.75].forEach(t=>{const p=rp[Math.round(t*10)],x=p[0],y=p[1]+1,z=[[x,y],[x+3.4,y+4.5],[x-.6,y+9],[x+3,y+13.5],[x+.4,y+18]];
+    brushOn(g,z,3.2,{c:'#efe7d3',rnd:r,dry:.1,tin:0,tout:.2});g.globalAlpha=.55;brushOn(g,z.map(q=>[q[0]-1.7,q[1]]),.7,{c:pal.ink,rnd:r,dry:.4,tin:.1,tout:.3});g.globalAlpha=1});
+}
+/* way chevrons: travel toward -y; on the approach side and through the opening, the leading one strongest */
+function _toriiWay(g,pal,w){
+  const L=w*1.2,r=mulberry((w|0)*5+1);
+  [[L*.5,.5],[L*.22,.75],[-L*.1,.95]].forEach(([y,a])=>{const s=w*.17;g.globalAlpha=a;
+    brushOn(g,[[-s,y+s*.7,.7],[-s*.2,y+s*.08,1],[0,y]],4.6,{c:pal.red,rnd:r,dry:.3,tin:.15,tout:.05});
+    brushOn(g,[[0,y],[s*.2,y+s*.08,1],[s,y+s*.7,.7]],4.6,{c:pal.red,rnd:r,dry:.3,tin:.05,tout:.45})});
+  g.globalAlpha=.3;brushOn(g,[[0,L*.62],[0,-L*.12]],1.6,{c:pal.ink,rnd:r,dry:.75,tin:.1,tout:.5});g.globalAlpha=1;
+}
+function drawTorii(g,gate,th,seed){
+  if(!gate)return;const pal=_ch6pal(),K=_ch6K(g);
+  const w=gate.ax!=null?Math.hypot(gate.bx-gate.ax,gate.by-gate.ay):70;
+  const ux=gate.ux!=null?gate.ux:Math.cos((gate.ang||-90)*Math.PI/180),uy=gate.uy!=null?gate.uy:Math.sin((gate.ang||-90)*Math.PI/180);
+  /* local -y must map onto the travel direction */
+  let rot=Math.atan2(uy,ux)+Math.PI/2;rot=Math.atan2(Math.sin(rot),Math.cos(rot));
+  let rb=rot;if(rb>Math.PI/2+.01)rb-=Math.PI;else if(rb<-Math.PI/2-.01)rb+=Math.PI;
+  const q=v=>Math.round(v*1000)/1000,k=pal.key+'|'+(w|0)+'|'+K+'|';
+  const body=_ch6Get('torb|'+k+q(rb),()=>_ch6Bake(K,w*1.45,rb,c=>_toriiBody(c,pal,w)));
+  const way=_ch6Get('torw|'+k+q(rot),()=>_ch6Bake(K,w*.8+10,rot,c=>_toriiWay(c,pal,w)));
+  _ch6Blit(g,body,gate.x,gate.y);_ch6Blit(g,way,gate.x,gate.y);
+}
+/* ---- ghost lords: pale court lord, no feet, outlined in dry brush; a broken enso hovers round him ---- */
+FOE_BOX.ghostlord=[150,190,75,172];FOE_BOX.tanuki=[150,150,72,132];FOE_BOX.inkwell=[110,70,55,58];FOE_BOX.cseal=[60,110,30,100];FOE_BOX.calligrapher=[250,300,118,280];FOE_BOX.echoBrush=[90,120,20,110];
+ART.ghostlord=function(f){
+  const E=f.E.g,cr=(p,j)=>{E.globalAlpha=.93;shapeOn(E,p,{c:CREAM,rnd:f.rnd,j:j==null?.6:j});E.globalAlpha=1},ln=(p,w,o)=>brushOn(E,p,w,Object.assign({c:f.pal.ink,rnd:f.rnd},o)),
+    sh=(p,w,a,o)=>{E.globalAlpha=a;ln(p,w,o);E.globalAlpha=1};
+  /* soft wash halo behind the pale figure so it reads on light paper (a paint wash, not light) */
+  f.W([[-44,-110],[-62,-70],[-56,-36],[-20,-16],[16,4],[34,-20],[60,-40],[62,-76],[42,-112],[0,-128]],.1);
+  /* body: narrow at the neck, full at the chest, sweeping into one ghost tail that curls right */
+  const body=[[-10,-104],[-26,-99],[-31,-80],[-29,-58],[-23,-40],[-15,-24],[-6,-12],[6,-4],[18,0],[26,-4],[16,-8],[12,-18],[18,-34],[25,-56],[29,-80],[26,-99],[10,-104],[0,-106]];
+  cr(body);
+  /* great sleeves: long drooping teardrops, tips flicking outward */
+  const sl=s=>[[s*22,-101],[s*40,-96],[s*54,-80],[s*60,-60],[s*58,-44],[s*64,-34],[s*54,-36],[s*44,-42],[s*36,-58],[s*30,-80]];
+  cr(sl(-1));cr(sl(1));
+  /* dry outline, broken and uneven in weight */
+  ln([[-10,-104],[-26,-99],[-31,-80],[-29,-58],[-23,-40],[-15,-24],[-6,-12],[6,-4],[18,0],[26,-4]],2.4,{dry:.5,tin:.05,tout:.85});
+  ln([[10,-104],[26,-99],[29,-80],[25,-56],[18,-34],[12,-18],[16,-8]],2.2,{dry:.55,tin:.05,tout:.7});
+  [-1,1].forEach(s=>{ln([[s*24,-101],[s*42,-96],[s*55,-80],[s*60,-60],[s*58,-44],[s*64,-34]],2.6,{dry:.45,tin:.05,tout:.85});
+    ln([[s*54,-36],[s*44,-42],[s*36,-58],[s*31,-78]],1.8,{dry:.6,tin:.3,tout:.4});
+    sh([[s*44,-88],[s*50,-66],[s*52,-48]],5,.12,{dry:.75,tin:.2,tout:.5})});
+  /* folds on the cream */
+  sh([[-14,-92],[-18,-62],[-12,-34],[0,-16]],4,.14,{dry:.7,tin:.1,tout:.7});sh([[12,-90],[16,-64],[10,-36]],3.4,.12,{dry:.7,tin:.1,tout:.6});
+  sh([[-4,-60],[-6,-38],[2,-20]],2,.18,{dry:.6,tin:.2,tout:.7});
+  /* crossed collar, belt cord, shaku baton held up the front */
+  ln([[-11,-104],[0,-88],[8,-74]],2,{dry:.3,tin:.1,tout:.4});ln([[11,-104],[2,-92]],1.8,{dry:.3,tin:.1,tout:.3});
+  sh([[-26,-66],[0,-62],[26,-66]],2.6,.7,{dry:.5,tin:.1,tout:.1});
+  shapeOn(E,[[-3,-94],[3,-94],[4,-56],[-3,-56]],{c:CREAM,rnd:f.rnd,j:.3});ln([[-3,-94],[-3,-56]],1.2,{dry:.3,tin:.1,tout:.1});ln([[3,-94],[4,-56]],1.2,{dry:.3,tin:.1,tout:.1});
+  /* head: long pale court face, painted high brows, closed eyes, small mouth */
+  cr([[-12,-130],[-14,-116],[-10,-106],[0,-102],[10,-106],[14,-116],[12,-130],[0,-134]],.4);
+  ln([[-12,-128],[-14,-116],[-10,-106],[0,-102],[10,-106],[14,-116],[12,-128]],1.8,{dry:.3,tin:.15,tout:.15});
+  f.E.g.fillStyle=f.pal.ink;[[-6,-127],[6,-127]].forEach(([x,y])=>{blotOn(E,x,y,1.6,f.pal.ink,.85,f.rnd)});
+  ln([[-9,-119],[-6,-117.4],[-2.5,-118.6]],1.4,{dry:.1,tin:.25,tout:.25});ln([[2.5,-118.6],[6,-117.4],[9,-119]],1.4,{dry:.1,tin:.25,tout:.25});
+  ln([[0,-116],[1,-111],[-1,-109.5]],1,{dry:.2});
+  E.fillStyle=f.pal.red;E.globalAlpha=.8;E.beginPath();E.ellipse(0,-106.5,2.2,1.1,0,0,6.283);E.fill();E.globalAlpha=1;
+  /* kanmuri cap with the standing ei tail */
+  shapeOn(E,[[-12,-130],[-12,-140],[-6,-147],[6,-147],[12,-140],[12,-130],[0,-133]],{c:f.pal.ink,rnd:f.rnd,j:.4});
+  shapeOn(E,[[-4,-146],[-3,-157],[4,-159],[5,-146]],{c:f.pal.ink,rnd:f.rnd,j:.3});
+  ln([[3,-152,1],[12,-166,1],[22,-170,.8],[30,-164,.5]],4.2,{dry:.3,tin:.05,tout:.7});
+  E.globalCompositeOperation='destination-out';ln([[-10,-135],[10,-135]],1,{c:'#000',dry:.4,tin:.1,tout:.1});E.globalCompositeOperation='source-over';
+  /* a small vermilion soul flame beside him: flat painted colour */
+  f.R([[42,-134],[36,-124],[42,-116],[48,-125],[43,-140]],5,{dry:.3,tin:.2,tout:.4});
+};
+function ensoSprite(pal,r,K){
+  K=K||3;const pad=8,S=r*2+pad*2,{c,g}=_ch6c(S,S,K),R=mulberry((r|0)*31+5);g.translate(S/2,S/2);
+  const a0=-2.2,P=[];for(let i=0;i<=56;i++){const t=i/56,a=a0+t*Math.PI*2*1.04,rr=r*(1+(vnoise(9,t*5)-.5)*.06)-t*1.5;P.push([Math.cos(a)*rr,Math.sin(a)*rr,1.15-t*.45])}
+  g.globalAlpha=.16;brushOn(g,P.map(p=>[p[0]*1.01,p[1]*1.01,p[2]*1.6]),11,{c:pal.ink,rnd:R,dry:.88,tin:.02,tout:.3});
+  g.globalAlpha=1;brushOn(g,P,8,{c:pal.ink,rnd:R,dry:.55,tin:.04,tout:.35});
+  blotOn(g,P[0][0],P[0][1],3.2,pal.ink,.9,R);
+  /* the broken state baked once, so the idle enso is a single plain drawImage */
+  const br=_ch6c(S,S,K);br.g.translate(S/2,S/2);br.g.beginPath();br.g.moveTo(0,0);br.g.arc(0,0,S,a0-.5,a0+Math.PI*2*.8);br.g.closePath();br.g.clip();br.g.drawImage(c,-S/2,-S/2,S,S);
+  return{c,b:br.c,S,a0,r};
+}
+function drawEnsoTelegraph(g,cx,cy,r,p){
+  /* baked at the device scale; idle and closed states are one 1:1 blit, only the closing sweep uses a clip */
+  const pal=_ch6pal(),m=g.getTransform();r=r||ENSO_R;p=clamp6(p||0,0,1);
+  const K=Math.round(Math.hypot(m.a,m.b)*100)/100,sp=_ch6Get('enso|'+pal.key+'|'+(r|0)+'|'+K,()=>ensoSprite(pal,r,K)),a=g.globalAlpha;
+  const X=m.a*cx+m.c*cy+m.e,Y=m.b*cx+m.d*cy+m.f,hd=sp.S*K/2,x0=Math.round(X-hd),y0=Math.round(Y-hd);
+  g.save();g.setTransform(1,0,0,1,0,0);g.globalAlpha=a*(.7+.25*p);
+  if(p<=0)g.drawImage(sp.b,x0,y0);
+  else if(p>=1)g.drawImage(sp.c,x0,y0);
+  else{g.beginPath();g.moveTo(X,Y);g.arc(X,Y,hd*2,sp.a0-.5,sp.a0+Math.PI*2*(.8+.2*p));g.closePath();g.clip();g.drawImage(sp.c,x0,y0)}
+  g.restore();
+}
+function clamp6(v,a,b){return v<a?a:v>b?b:v}
+function drawGhostLord(g,e,x,y,flip,dead){
+  if(dead){drawGhostDissolve(g,e,x,y,e&&e.dk!=null?e.dk:.65);return}
+  const pal=_ch6pal(),t=typeof now==='number'?now:0,bob=Math.sin(t*1.7+(e&&e.x||0)*.05)*2.2;
+  const cy=y-FOOT_CH6.ghostlord;
+  drawSprite(g,foeSprite('ghostlord',pal),x,cy+C6_MID.ghostlord+bob,SCALE*.86,flip,.95);
+  drawEnsoTelegraph(g,x,cy+bob,ENSO_R,0);
+}
+function drawGhostDissolve(g,e,x,y,k){
+  const pal=_ch6pal();k=clamp6(k,0,1);const cx=x,cy=y-FOOT_CH6.ghostlord;
+  const a=g.globalAlpha;
+  drawSprite(g,foeSprite('ghostlord',pal),x,cy+C6_MID.ghostlord-k*10,SCALE*.86,0,Math.pow(1-k,1.6)*.95);
+  g.globalAlpha=a*(1-k*.6);drawEnsoTelegraph(g,cx,cy,ENSO_R,1);g.globalAlpha=a;
+  g.fillStyle=pal.ink;
+  for(let i=0;i<26;i++){const h1=hash2(i,7),h2=hash2(i,11),h3=hash2(i,13),ang=h1*6.283,d=(8+h2*30)*(.35+k),px=cx+Math.cos(ang)*d*.9,py=cy+Math.sin(ang)*d*.7-k*(18+h3*26)+(h3-.5)*50;
+    g.globalAlpha=a*(1-k)*(.35+h3*.5);g.beginPath();g.ellipse(px,py,.6+h2*1.6*(1-k*.5),.5+h1*1.1,ang,0,6.283);g.fill()}
+  g.globalAlpha=a;
+}
+/* ---- tanuki ink thief: straw hat, big belly, ink gourd on a cord, ringed tail ---- */
+ART.tanuki=function(f){
+  const r=f.rnd;
+  /* tail behind, lower right, ringed */
+  f.W([[22,-26],[44,-40],[62,-34],[60,-14],[40,-6]],.2);
+  f.B([[20,-18,.8],[42,-28,1.2],[58,-30,1],[64,-20,.6]],16,{dry:.5,tin:.1,tout:.5});
+  for(let i=0;i<3;i++){const x=36+i*9;f.X([[x,-38+i*1.5],[x+3,-18+i]],2,{tin:.2,tout:.3})}
+  /* legs and feet */
+  f.B([[-16,-14],[-18,-2]],11,{dry:.35,tin:.05,tout:.05});f.B([[14,-14],[16,-2]],11,{dry:.35,tin:.05,tout:.05});
+  f.S([[-28,2],[-22,-5],[-10,-4],[-8,2]],.4);f.S([[8,2],[10,-4],[22,-5],[28,2]],.4);
+  /* body: round fur, pale belly left as paper */
+  f.W([[-30,-66],[-36,-36],[-24,-10],[0,-6],[24,-10],[36,-36],[30,-66],[0,-76]],.28);
+  f.B([[-24,-70,.8],[-34,-48,1.1],[-30,-22,1],[-14,-10,.8]],12,{dry:.55,tin:.05,tout:.2});
+  f.B([[24,-70,.8],[34,-48,1.1],[30,-22,1],[14,-10,.8]],12,{dry:.55,tin:.05,tout:.2});
+  f.B([[-18,-58],[-22,-36],[-10,-16],[8,-15],[20,-34],[16,-58]],1.8,{dry:.45,tin:.1,tout:.1});
+  for(let i=0;i<9;i++){const a=-2.6+i*.65,x=Math.cos(a)*30,y=-42+Math.sin(a)*30;f.B([[x,y],[x*1.12,y+3]],1.4,{dry:.3,tin:.1,tout:.7})}
+  /* arms: one hugging the gourd */
+  f.B([[-26,-62],[-34,-44],[-20,-36]],8,{dry:.4,tin:.05,tout:.1});f.O(-18,-36,4.2);
+  f.B([[26,-62],[34,-50],[28,-38]],8,{dry:.4,tin:.05,tout:.1});
+  /* ink gourd (tokkuri) on a straw cord, vermilion tag */
+  f.W([[-48,-46],[-56,-30],[-50,-16],[-34,-14],[-30,-30],[-38,-46]],.32);
+  f.B([[-44,-48],[-54,-32],[-48,-16],[-36,-15],[-31,-30],[-38,-46]],2.4,{dry:.3,tin:.05,tout:.05});
+  f.S([[-45,-46],[-44,-58],[-38,-58],[-38,-46]],.3);f.O(-41,-60,3.4,4.2);
+  f.RS([[-50,-32],[-42,-33],[-42,-22],[-49,-21]],.9);
+  f.B([[-41,-58],[-24,-64],[-6,-72]],1.4,{dry:.4,tin:.1,tout:.1});
+  f.B([[-38,-15],[-38,-6],[-37,0]],2,{dry:.1,tin:.1,tout:.8});f.O(-37,1.4,1.6);
+  /* head: big round face, dark eye mask, pale muzzle */
+  f.W([[-22,-102],[-26,-84],[-14,-72],[14,-72],[26,-84],[22,-102],[0,-108]],.24);
+  f.B([[-20,-104],[-27,-88],[-18,-74],[-4,-70]],6,{dry:.5,tin:.05,tout:.3});f.B([[20,-104],[27,-88],[18,-74],[4,-70]],6,{dry:.5,tin:.05,tout:.3});
+  f.S([[-24,-108],[-28,-122],[-16,-112]],.4);f.S([[24,-108],[28,-122],[16,-112]],.4);
+  f.S([[-19,-96],[-8,-98],[-4,-88],[-12,-82],[-21,-86]],.5);f.S([[19,-96],[8,-98],[4,-88],[12,-82],[21,-86]],.5);
+  f.XS([[-13,-92],[-10,-93],[-9,-90],[-12,-89]]);f.XS([[13,-92],[10,-93],[9,-90],[12,-89]]);
+  f.O(-11,-90.6,1.1);f.O(11,-90.6,1.1);
+  f.O(0,-82,3,3.6);f.B([[0,-79],[0,-76],[-4,-74]],1.2,{dry:.1});f.B([[0,-76],[4,-74]],1.2,{dry:.1});
+  for(let i=0;i<3;i++){f.B([[-8,-80+i*2],[-20,-82+i*3]],.7,{dry:.2,tin:.2,tout:.8});f.B([[8,-80+i*2],[20,-82+i*3]],.7,{dry:.2,tin:.2,tout:.8})}
+  /* straw kasa tilted on the head */
+  f.W([[-34,-104],[0,-128],[36,-110],[2,-102]],.2);
+  f.B([[-36,-104,.7],[-14,-118,1],[2,-128,1],[20,-120,1],[38,-108,.7]],3,{dry:.4,tin:.05,tout:.05});
+  f.B([[-36,-104],[0,-101],[38,-108]],2.2,{dry:.5,tin:.05,tout:.05});
+  for(let i=0;i<6;i++){const t=(i+.5)/6,x=-34+t*72;f.B([[2,-127],[x,-104+t*-4]],.8,{dry:.5,tin:.1,tout:.2})}
+};
+function drawTanuki(g,e,x,y,flip){
+  const pal=_ch6pal(),cy=y-FOOT_CH6.tanuki,K=_ch6K(g),R=typeof TANUKI_REACH==='number'?TANUKI_REACH:50;
+  _ch6Blit(g,_ch6Get('tr|'+pal.key+'|'+R+'|'+K,()=>_ch6Bake(K,R+12,0,c=>{const sp=tanukiRadiusSprite(pal,R,K);c.drawImage(sp.c,-sp.S/2,-sp.S/2,sp.S,sp.S)})),x,cy);
+  drawSprite(g,foeSprite('tanuki',pal),x,cy+C6_MID.tanuki,SCALE,flip);
+}
+function tanukiRadiusSprite(pal,R,K){
+  K=K||2;const pad=12,S=R*2+pad*2,{c,g}=_ch6c(S,S,K),r=mulberry((R|0)*13+1);g.translate(S/2,S/2);
+  /* uneven damp wash inside: many soft blots, denser near the rim */
+  for(let i=0;i<34;i++){const a=r()*6.283,d=Math.sqrt(r())*R*.88;blotOn(g,Math.cos(a)*d,Math.sin(a)*d,6+r()*10,pal.ink,.018+r()*.02*(d/R),r)}
+  /* broken dry ring in four arcs */
+  g.globalAlpha=1;
+  for(let k=0;k<4;k++){const a0=k*1.571+.18+r()*.1,a1=a0+1.1+r()*.12,P=[];for(let i=0;i<=10;i++){const a=a0+(a1-a0)*i/10,rr=R*(1+(r()-.5)*.03);P.push([Math.cos(a)*rr,Math.sin(a)*rr,.8+.4*Math.sin(i/10*Math.PI)])}
+    g.globalAlpha=.42;brushOn(g,P,2.6,{c:pal.ink,rnd:r,dry:.65,tin:.25,tout:.35})}
+  /* paw prints in the gaps */
+  for(let k=0;k<4;k++){const a=k*1.571+.08,px=Math.cos(a)*R,py=Math.sin(a)*R,ro=a+Math.PI/2;g.globalAlpha=.42;
+    g.save();g.translate(px,py);g.rotate(ro);blotOn(g,0,1.4,2.4,pal.ink,.5,r);
+    for(let j=0;j<4;j++){const ta=-2.4+j*.45;blotOn(g,Math.cos(ta)*4.4,Math.sin(ta)*4.4+1.2,1.1,pal.ink,.5,r)}g.restore()}
+  g.globalAlpha=1;return{c,S};
+}
+/* ---- ink wells: a thin suzuri slab, rounded corners, a deep well at the far end, an ink stick on the flat ---- */
+ART.inkwell=function(f,dry){
+  const r=f.rnd,A=f.A.g,ink=f.pal.ink;
+  /* top face (far edge narrower) and a thin side band, corners rounded by the spline */
+  const top=[[-30,-46],[0,-47.5],[30,-46],[38,-42],[42,-26],[40,-17],[0,-15.5],[-40,-17],[-42,-26],[-38,-42]];
+  const side=[[-40,-17],[0,-15.5],[40,-17],[41,-9],[36,-5],[0,-3.5],[-36,-5],[-41,-9]];
+  f.W([[-44,-5],[0,0],[44,-5],[30,3],[-30,3]],.14);
+  f.W(side,.36);
+  A.globalAlpha=.34;brushOn(A,[[-39,-10],[-8,-8.6],[20,-8.8],[39,-10.5]],2.4,{c:ink,rnd:r,dry:.75,tin:.15,tout:.2});A.globalAlpha=1;
+  f.W(top,.09);
+  /* the raised rim: a second, inset outline, broken */
+  const inner=[[-30,-41],[0,-42.3],[30,-41],[35,-24],[0,-21.5],[-35,-24]];
+  f.W(inner,.07);
+  f.B([[-40,-17,.8],[0,-15.5,1],[40,-17,.8]],2.2,{dry:.4,tin:.1,tout:.1});
+  f.B([[-40,-17],[-42,-26],[-38,-42],[-30,-46],[0,-47.5],[30,-46],[38,-42],[42,-26],[40,-17]],1.2,{dry:.62,tin:.15,tout:.2});
+  f.B([[-41,-10],[-36,-5],[0,-3.5],[36,-5],[41,-10]],1.5,{dry:.6,tin:.15,tout:.2});
+  f.B([[-35,-24],[-32,-36],[-30,-41],[0,-42.3],[30,-41]],1,{dry:.65,tin:.2,tout:.35});
+  f.B([[30,-41],[33,-32],[35,-24],[0,-21.5]],.9,{dry:.7,tin:.2,tout:.5});
+  /* the well (umi): a deep curved pool along the far rim, sloping out onto the flat */
+  const well=[[-24,-39.5],[0,-40.8],[24,-39.5],[27,-35],[14,-31.4],[0,-30.6],[-14,-31.4],[-27,-35]];
+  f.B([[-27,-35],[-14,-31.2],[0,-30.4],[14,-31.2],[27,-35]],1.2,{dry:.25,tin:.1,tout:.1});
+  if(dry){f.W(well,.2);
+    f.B([[-14,-36],[-7,-34.5],[-1,-37],[6,-35]],.8,{dry:.3,tin:.1,tout:.1});
+    for(let i=0;i<5;i++){const x=-18+r()*36,y=-38+r()*5;f.O(x,y,.5+r()*.5)}}
+  else{f.S(well,.6);
+    const E=f.E.g;E.globalAlpha=.5;brushOn(E,[[-14,-37.6],[-2,-38.6],[10,-38.2]],1.4,{c:f.pal.paper,rnd:r,dry:.3,tin:.4,tout:.6});E.globalAlpha=1;
+    /* a drop run over the near lip */
+    f.B([[36,-24],[40,-18],[40.5,-12]],1.3,{dry:.2,tin:.05,tout:.7});f.O(40.5,-11,1.3)}
+  /* the ink stick lying diagonally on the flat: dark, ground end square, small vermilion label */
+  f.B([[-26,-19.5,.9],[-6,-23.5,1],[12,-27.5,.9]],5.6,{dry:.12,tin:.02,tout:.02});
+  f.X([[-24,-21.6],[9,-28.8]],.6,{tin:.1,tout:.1});
+  f.RS([[-15,-23.5],[-8,-25],[-7.5,-21.4],[-14.5,-19.9]],.95);
+  /* a chip off the near corner and a little grain */
+  f.XS([[40.5,-17],[37.5,-16.2],[41,-13]]);
+  for(let i=0;i<3;i++){const x=-28+r()*50,y=-28+r()*3;f.B([[x,y],[x+4+r()*4,y+r()]],.7,{dry:.6,tin:.2,tout:.5})}
+};
+function drawInkWell(g,e,x,y,used){
+  const cy=y-FOOT_CH6.inkwell;
+  drawSprite(g,foeSprite('inkwell',_ch6pal(),used?1:0),x,cy+C6_MID.inkwell,SCALE*1.05);
+}
+/* ---- the Calligrapher's seals (cseal): a paper talisman on a bamboo stake, a vermilion seal 画 ---- */
+ART.cseal=function(f){
+  const r=f.rnd,E=f.E.g;
+  f.W([[-14,0],[0,3],[14,0],[0,-3]],.25);
+  /* stake with nodes */
+  f.B([[0,2],[.5,-40],[0,-92]],4.2,{dry:.3,tin:.02,tout:.1});
+  for(let i=0;i<3;i++)f.B([[-2.6,-20-i*26],[2.6,-20.6-i*26]],1.4,{dry:.1,tin:0,tout:0});
+  /* the paper strip, slightly curled, hung by a cord */
+  const pap=[[-17,-84],[0,-86],[17,-84.5],[16,-50],[18,-14],[0,-12],[-17,-13.5],[-16,-50]];
+  E.globalAlpha=.95;shapeOn(E,pap,{c:CREAM,rnd:r,j:.6});E.globalAlpha=1;
+  f.B([[-17,-84],[-16,-50],[-17,-13.5]],1.4,{dry:.45,tin:.1,tout:.3});f.B([[17,-84.5],[16,-50],[18,-14]],1.4,{dry:.5,tin:.1,tout:.3});
+  f.B([[-17,-84],[0,-86],[17,-84.5]],1.6,{dry:.3,tin:.05,tout:.05});f.B([[-17,-13.5],[0,-12],[18,-14]],1.2,{dry:.5,tin:.1,tout:.1});
+  f.B([[-6,-86],[0,-94],[6,-86]],1.2,{dry:.3,tin:.1,tout:.1});
+  /* a column of small brush writing above and below the seal */
+  [[-76],[-70],[-22],[-17]].forEach(([y],i)=>f.B([[-6+i%2*2,y],[6-i%2*3,y+.6]],1.3,{dry:.35,tin:.2,tout:.4}));
+  f.B([[0,-80],[0,-64]],1.3,{dry:.35,tin:.2,tout:.5});
+  /* the seal: vermilion square, white kanji left as paper */
+  f.RS([[-13,-60],[13,-60.5],[13.5,-33],[-13,-32.5]],.95);
+  E.fillStyle=CREAM;E.globalAlpha=.92;E.font='700 21px "Hiragino Mincho ProN","Yu Mincho","Noto Serif CJK JP",serif';E.textAlign='center';E.textBaseline='middle';E.fillText('画',0,-46.5);E.globalAlpha=1;
+};
+function paintInkWellSplash(g,x,y,k){
+  if(k<=0||k>=1)return;const pal=_ch6pal(),a=g.globalAlpha;g.fillStyle=pal.ink;
+  for(let i=0;i<14;i++){const h1=hash2(i,3),h2=hash2(i,5),ang=-Math.PI*(.15+.7*h1),v=40+h2*60,t=k*.55,px=x+Math.cos(ang)*v*t,py=y-24+Math.sin(ang)*v*t+180*t*t,sz=(1.2+h2*2.4)*(1-k*.6);
+    g.globalAlpha=a*(1-k*k);g.beginPath();g.ellipse(px,py,sz,sz*(.8+h1*.3),ang,0,6.283);g.fill()}
+  g.globalAlpha=a*(1-k)*.5;blotOn(g,x,y-22,5+k*5,pal.ink,a*(1-k)*.35,mulberry(9));g.globalAlpha=a;
+}
+/* ---- lantern fog: baked once per paper/scale in page space, drawn as 1:1 sub-rect blits ---- */
+let FOG=null;
+function resetFog(){FOG=null}
+/* a soft band: three nested washes with uneven edges, no bristle lines */
+function _ch6Band(g,P,w,col,a,r){for(let k=0;k<3;k++){g.globalAlpha=a*(.45-k*.1);shapeOn(g,ribbon(P.map(p=>[p[0],p[1],p[2]==null?1:p[2]]),w*(1-k*.28)),{c:col,rnd:r,j:w*.18})}g.globalAlpha=1}
+function _fogTex(th,K,F_W,F_H,seen){
+  const c=mk(F_W*K,F_H*K),g=c.getContext('2d'),r=mulberry(61);g.setTransform(K,0,0,K,0,0);
+  /* base veil in warm paper grey, uneven: thick banks and thin ones, never one flat tone */
+  g.globalAlpha=.86;g.fillStyle=th.paper;g.fillRect(0,0,F_W,F_H);
+  const shade=th.shade||th.paper;
+  for(let i=0;i<16;i++){const y=-20+i*44+(r()-.5)*24,P=[[-60,y,.8],[100,y+(r()-.5)*30,1.1],[260,y+(r()-.5)*30,.9],[F_W+60,y,1]];
+    _ch6Band(g,P,46+r()*50,i%3?th.paper:shade,.06+r()*.05,r)}
+  /* drifting banks across the whole page, light and shade alternating */
+  for(let i=0;i<12;i++){const y=r()*F_H,amp=6+r()*14,P=[];for(let k=0;k<=6;k++)P.push([-80+k*(F_W+160)/6,y+Math.sin(k*1.3+i)*amp,.6+r()*.7]);
+    _ch6Band(g,P,22+r()*34,i%2?shade:'#e3dbcf',.06+r()*.05,r)}
+  g.globalAlpha=1;
+  g.globalCompositeOperation='destination-out';
+  (seen||[]).forEach((p,i)=>{for(let k=0;k<5;k++){g.globalAlpha=.11;g.beginPath();g.arc(p.x+(hash2(i,k)-.5)*6,p.y-18+(hash2(k,i)-.5)*6,30-k*4,0,6.283);g.fill()}});
+  g.globalCompositeOperation='source-over';g.globalAlpha=1;
+  return c;
+}
+/* the feathered edge inside the clear circle: the fog's own average colour fading toward the tip, rim bitten by dry strokes */
+function _fogRing(th,R,K,tex){
+  const one=mk(48,48),og=one.getContext('2d');og.imageSmoothingQuality='high';og.drawImage(tex,0,0,tex.width,tex.height,0,0,48,48);
+  const px=og.getImageData(0,0,48,48).data;let sr=0,sg=0,sb=0,sa=0;for(let i=0;i<px.length;i+=4){const a=px[i+3];sr+=px[i]*a;sg+=px[i+1]*a;sb+=px[i+2]*a;sa+=a}
+  const col='rgb('+Math.round(sr/sa)+','+Math.round(sg/sa)+','+Math.round(sb/sa)+')',A=sa/(px.length/4)/255;
+  const S=Math.ceil(R*2*K),c=mk(S,S),g=c.getContext('2d'),h=S/2,rr=mulberry(5);
+  g.beginPath();g.arc(h,h,h,0,6.2832);g.clip();
+  const gr=g.createRadialGradient(h,h,R*.48*K,h,h,R*K);gr.addColorStop(0,'rgba(0,0,0,0)');gr.addColorStop(.55,'rgba(0,0,0,'+(A*.3).toFixed(3)+')');gr.addColorStop(.88,'rgba(0,0,0,'+(A*.85).toFixed(3)+')');gr.addColorStop(.975,'rgba(0,0,0,'+A.toFixed(3)+')');gr.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=gr;g.fillRect(0,0,S,S);g.globalCompositeOperation='source-in';g.fillStyle=col;g.fillRect(0,0,S,S);g.globalCompositeOperation='source-over';
+  g.setTransform(K,0,0,K,h,h);
+  for(let i=0;i<40;i++){const a=i/40*6.283+rr()*.12,d0=R*(.6+rr()*.2);g.globalAlpha=(.12+rr()*.16)*A;
+    brushOn(g,[[Math.cos(a)*d0,Math.sin(a)*d0],[Math.cos(a+.08)*(d0+R*.3),Math.sin(a+.08)*(d0+R*.3)]],8+rr()*10,{c:col,rnd:rr,dry:.7,tin:.4,tout:.1})}
+  g.globalCompositeOperation='destination-out';
+  for(let i=0;i<16;i++){const a=rr()*6.283,d0=R*(.8+rr()*.16);g.globalAlpha=.25+rr()*.25;g.beginPath();g.ellipse(Math.cos(a)*d0,Math.sin(a)*d0,10+rr()*14,5+rr()*6,a+1.57,0,6.283);g.fill()}
+  return{c,S,R,K};
+}
+function paintFog(g,th,tip,radius,F_W,F_H,mask){
+  /* static layers only: the baked page fog blitted around the tip square, 32 slices inside the square cut at the
+     circle's chord, then the baked feather ring. Keyed on paper + scale only, so screen shake never rebakes. */
+  th=th||TH;F_W=F_W||400;F_H=F_H||640;const m=g.getTransform(),K=Math.round(m.a*1000)/1000,R=radius||140;
+  const seen=Array.isArray(mask)?mask:(mask&&mask.seen)||null,sk=(seen||[]).map(p=>(p.x|0)+','+(p.y|0)).join(';');
+  const key=th.key+'|'+th.paper+'|'+K+'|'+F_W+'x'+F_H;
+  if(!FOG||FOG.key!==key)FOG={key,sk:null,tex:null,ring:null};
+  if(FOG.sk!==sk||!FOG.tex){FOG.tex=_fogTex(th,K,F_W,F_H,seen);FOG.sk=sk;FOG.ring=null}
+  if(!FOG.ring||FOG.ring.R!==R)FOG.ring=_fogRing(th,R,K,FOG.tex);
+  const T=FOG.tex,ox=Math.round(m.e),oy=Math.round(m.f),tw=T.width,thh=T.height;
+  g.save();g.setTransform(1,0,0,1,0,0);
+  /* x,y,w,h in canvas pixels, clamped to the page */
+  const blit=(x,y,w,h)=>{const x0=Math.max(ox,x),y0=Math.max(oy,y),x1=Math.min(ox+tw,x+w),y1=Math.min(oy+thh,y+h);if(x1>x0&&y1>y0)g.drawImage(T,x0-ox,y0-oy,x1-x0,y1-y0,x0,y0,x1-x0,y1-y0)};
+  if(!tip){blit(ox,oy,tw,thh);g.restore();return}
+  const S=FOG.ring.S,x0=Math.round(m.a*tip.x+m.e-S/2),y0=Math.round(m.d*tip.y+m.f-S/2),x1=x0+S,y1=y0+S;
+  blit(ox,oy,tw,y0-oy);blit(ox,y1,tw,oy+thh-y1);blit(ox,y0,x0-ox,S);blit(x1,y0,ox+tw-x1,S);
+  const N=32,bh=S/N,R0=Math.floor(S/2),ov=Math.ceil(R0*.025);
+  for(let i=0;i<N;i++){const ya=i*bh,yb=ya+bh,dy=Math.max(Math.abs(ya-R0),Math.abs(yb-R0)),hw=dy>=R0?0:Math.sqrt(R0*R0-dy*dy),Y=y0+Math.floor(ya),Hh=Math.ceil(yb)-Math.floor(ya);
+    const l=Math.min(R0,Math.floor(R0-hw)+ov),rx=Math.max(R0,Math.ceil(R0+hw)-ov);blit(x0,Y,l,Hh);blit(x0+rx,Y,S-rx,Hh)}
+  /* the rim, clipped to the page by its source rect */
+  {const a0=Math.max(ox,x0),b0=Math.max(oy,y0),a1=Math.min(ox+tw,x1),b1=Math.min(oy+thh,y1);if(a1>a0&&b1>b0)g.drawImage(FOG.ring.c,a0-x0,b0-y0,a1-a0,b1-b0,a0,b0,a1-a0,b1-b0)}
+  g.restore();
+}
+function warmFog(th){
+  /* bake the fog cache into a throwaway canvas so the first playable frame only blits */
+  th=th||TH;if(!th)return;
+  const g=warmFog._g||(warmFog._g=mk(2,2).getContext('2d'));
+  g.setTransform(DPR*SC,0,0,DPR*SC,0,0);
+  paintFog(g,th,null,FOG_R,W,H);
+}
+/* ---- Echo: the Black Brush replaying a stroke 0.8 s behind ---- */
+const ECHO_INK='#120d0a';let ECHO=null;
+function resetEcho(){if(ECHO&&ECHO.c){const q=ECHO.c.getContext('2d');q.setTransform(1,0,0,1,0,0);q.clearRect(0,0,ECHO.c.width,ECHO.c.height)}if(ECHO){ECHO.n=0;ECHO.pts=null}}
+ART.echoBrush=function(f){
+  /* a big hanging brush: bamboo handle with a cord loop, full wet hair tip at the origin */
+  f.B([[60,-104],[40,-72],[14,-30]],6.6,{dry:.1,tin:0,tout:0});
+  f.X([[57,-99],[18,-36]],.8,{tin:.1,tout:.1});
+  for(let i=0;i<4;i++){const t=.18+i*.22,x=60-46*t,y=-104+74*t;f.B([[x-4,y-1.5],[x+4,y+1.5]],1.4,{dry:.1,tin:0,tout:0})}
+  f.B([[62,-106],[70,-114],[64,-118],[58,-110]],1.2,{dry:.2,tin:.1,tout:.1});
+  f.R([[22,-42],[14,-30]],7.6,{dry:.15,tin:0,tout:0});
+  f.B([[16,-32,1],[8,-18,1.15],[2,-6,.8],[0,0,.3]],12,{dry:.3,tin:.02,tout:.6});
+};
+function drawEchoPath(g,pts){
+  /* baked once at the device scale and blitted 1:1 (no resampling per frame) */
+  if(!pts||pts.length<2)return;const pal=_ch6pal(),m=g.getTransform(),K=m.a;
+  let sp=pts.__echoPath;
+  if(!sp||sp.key!==pal.key||sp.K!==K){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of pts){x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x);y1=Math.max(y1,p.y)}
+    const pad=8,c=mk((x1-x0+pad*2)*K,(y1-y0+pad*2)*K),q=c.getContext('2d');q.setTransform(K,0,0,K,(pad-x0)*K,(pad-y0)*K);let acc=0;
+    for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i];acc+=Math.hypot(b.x-a.x,b.y-a.y);if(acc<9)continue;acc=0;blotOn(q,b.x,b.y,1.2+hash2(i,4)*.7,pal.ink,.32,mulberry(i))}
+    sp=pts.__echoPath={c,x:x0-pad,y:y0-pad,key:pal.key,K}}
+  g.save();g.setTransform(1,0,0,1,0,0);g.drawImage(sp.c,Math.round(m.a*sp.x+m.e),Math.round(m.d*sp.y+m.f));g.restore();
+}
+function drawEchoHead(g,p){if(p)drawSprite(g,foeSprite('echoBrush',_ch6pal()),p.x,p.y,SCALE*.9,false,.95)}
+function drawEcho(g,pts,T,delay){
+  if(!pts||pts.length<2)return;delay=delay==null?ECHO_DELAY:delay;const t=T-delay;if(t<=0)return;
+  const tm=p=>p.t!=null?p.t:p.s/1600;
+  let lo=0,hi=pts.length-1;if(tm(pts[hi])<=t)lo=hi;else{while(lo<hi){const md=(lo+hi+1)>>1;if(tm(pts[md])<=t)lo=md;else hi=md-1}}
+  const n=lo+1;if(n<2)return;
+  const cw=g.canvas.width,ch=g.canvas.height,m=g.getTransform(),mk_=[m.a,m.b,m.c,m.d,m.e,m.f].join(',');
+  if(!ECHO||ECHO.c.width!==cw||ECHO.c.height!==ch||ECHO.mk!==mk_){ECHO={c:mk(cw,ch),n:0,pts:null,mk:mk_,bb:null}}
+  const q=ECHO.c.getContext('2d');
+  if(ECHO.pts!==pts||n<ECHO.n){q.setTransform(1,0,0,1,0,0);q.clearRect(0,0,cw,ch);ECHO.n=0;ECHO.pts=pts;ECHO.bb=null}
+  const TAIL=6;
+  if(n-TAIL>ECHO.n+4){const ch_=pts.slice(Math.max(0,ECHO.n-1),n-TAIL);q.setTransform(m);inkRibbon(q,ch_,ECHO_INK,{seed:91,pool:!ECHO.n});ECHO.n=n-TAIL-1;
+    let bb=ECHO.bb||[1e9,1e9,-1e9,-1e9];for(const p of ch_){const X=m.a*p.x+m.c*p.y+m.e,Y=m.b*p.x+m.d*p.y+m.f,P=(p.w||8)*m.a;bb=[Math.min(bb[0],X-P),Math.min(bb[1],Y-P),Math.max(bb[2],X+P),Math.max(bb[3],Y+P)]}ECHO.bb=bb}
+  if(ECHO.bb){const x0=Math.max(0,Math.floor(ECHO.bb[0])),y0=Math.max(0,Math.floor(ECHO.bb[1])),x1=Math.min(cw,Math.ceil(ECHO.bb[2])),y1=Math.min(ch,Math.ceil(ECHO.bb[3]));
+    if(x1>x0&&y1>y0){g.save();g.setTransform(1,0,0,1,0,0);g.drawImage(ECHO.c,x0,y0,x1-x0,y1-y0,x0,y0,x1-x0,y1-y0);g.restore()}}
+  const tail=pts.slice(Math.max(0,ECHO.n),n);if(tail.length>1)inkRibbon(g,tail,ECHO_INK,{seed:91});
+  const h=pts[n-1];drawEchoHead(g,h);
+}
+/* ---- the Calligrapher ---- */
+ART.calligrapher=function(f){
+  const E=f.E.g,cr=(p,j)=>shapeOn(E,p,{c:'#e9e0cc',rnd:f.rnd,j:j==null?.5:j}),ln=(p,w,o)=>brushOn(E,p,w,Object.assign({c:f.pal.ink,rnd:f.rnd},o));
+  /* the giant brush: shaft from over his right shoulder down across the body to a full tip at the lower left */
+  f.B([[78,-262],[40,-176],[-2,-92],[-34,-30]],9,{dry:.12,tin:0,tout:0});
+  f.X([[74,-254],[-28,-40]],1,{tin:.1,tout:.1});
+  for(let i=0;i<5;i++){const t=.1+i*.17,x=78-112*t,y=-262+232*t;f.B([[x-6,y-2.6],[x+6,y+2.6]],2,{dry:.1,tin:0,tout:0})}
+  f.R([[-30,-38],[-38,-22]],11,{dry:.15,tin:0,tout:0});
+  f.B([[-38,-24,1],[-50,-6,1.25],[-58,10,.9],[-62,20,.3]],20,{dry:.35,tin:.02,tout:.55});
+  /* hakama legs */
+  f.B([[-16,-80,.8],[-26,-46,1],[-38,-4,1.1]],22,{dry:.4,tin:.02,tout:.08});f.B([[14,-80,.8],[22,-44,1],[36,-4,1.1]],22,{dry:.4,tin:.02,tout:.08});
+  f.B([[-2,-80],[0,-40],[-2,-4]],18,{dry:.45,tin:.02,tout:.08});
+  f.S([[-50,4],[-42,-4],[-28,-3],[-24,4]],.3);f.S([[26,4],[30,-4],[46,-3],[50,4]],.3);
+  /* black outer robe (haori), very long, wide sleeves */
+  f.S([[-24,-198],[-40,-160],[-42,-110],[-30,-84],[-10,-84],[-8,-170]],.6);f.S([[24,-198],[40,-160],[42,-110],[30,-84],[10,-84],[8,-170]],.6);
+  /* hanging sleeves: wide at the cuff, painted in long downward strokes with dry edges */
+  [-1,1].forEach(s=>{f.W([[s*24,-196],[s*56,-178],[s*72,-140],[s*74,-104],[s*58,-98],[s*44,-120],[s*36,-170]],.18);
+    f.B([[s*26,-194,.6],[s*52,-178,1],[s*66,-146,1.1],[s*70,-108,.9]],13,{dry:.5,tin:.05,tout:.3});
+    f.B([[s*34,-182,.7],[s*46,-150,1],[s*54,-112,.9]],11,{dry:.55,tin:.1,tout:.35});
+    f.B([[s*72,-106],[s*62,-96],[s*50,-100]],3.2,{dry:.4,tin:.1,tout:.6});
+    f.X([[s*50,-170],[s*62,-114]],1.2,{tin:.3,tout:.4})});
+  /* pale under-kimono showing at the chest */
+  cr([[-10,-196],[10,-196],[12,-150],[0,-120],[-12,-150]]);
+  ln([[-10,-196],[0,-150],[8,-118]],2,{dry:.2,tin:.1,tout:.2});ln([[10,-196],[0,-170]],1.8,{dry:.2,tin:.1,tout:.2});
+  /* hands on the brush shaft */
+  cr([[18,-140],[30,-144],[34,-132],[22,-128]],.4);ln([[18,-140],[30,-144],[34,-132],[22,-128],[18,-140]],1.4,{dry:.3});
+  cr([[-8,-100],[4,-104],[8,-92],[-4,-88]],.4);ln([[-8,-100],[4,-104],[8,-92],[-4,-88],[-8,-100]],1.4,{dry:.3});
+  /* belt */
+  f.B([[-30,-84],[0,-80],[30,-84]],6,{dry:.25,tin:.05,tout:.05});
+  /* head: long face in three-quarter view, heavy brows, long beard */
+  cr([[-15,-232],[-17,-212],[-13,-200],[0,-196],[13,-200],[17,-214],[15,-232],[0,-238]],.4);
+  ln([[-15,-232],[-17,-212],[-13,-200]],1.8,{dry:.3,tin:.1,tout:.2});ln([[15,-232],[17,-214],[13,-200]],1.8,{dry:.3,tin:.1,tout:.2});
+  ln([[-12,-224],[-3,-221]],3,{dry:.3,tin:.2,tout:.3});ln([[3,-221],[12,-224]],3,{dry:.3,tin:.3,tout:.2});
+  ln([[-9,-217.5],[-5,-216.5]],1.6,{dry:.1});ln([[5,-216.5],[9,-217.5]],1.6,{dry:.1});
+  ln([[1,-220],[3,-210],[0,-207]],1.2,{dry:.2});ln([[-6,-204],[0,-205],[6,-204]],1.2,{dry:.3});
+  for(let i=0;i<9;i++){const x=-10+i*2.5;ln([[x,-204],[x*1.1-1,-186],[x*.8-2,-166-((i*7)%5)]],1.6,{dry:.45,tin:.05,tout:.8})}
+  ln([[-12,-208],[-17,-196]],1.4,{dry:.3,tout:.8});ln([[12,-208],[17,-196]],1.4,{dry:.3,tout:.8});
+  /* tall folded eboshi */
+  shapeOn(E,[[-15,-232],[-16,-246],[-10,-268],[2,-286],[12,-276],[16,-250],[15,-232],[0,-236]],{c:f.pal.ink,rnd:f.rnd,j:.5});
+  E.globalCompositeOperation='destination-out';ln([[-10,-258],[8,-262]],1,{c:'#000',dry:.5,tin:.2,tout:.2});ln([[-6,-246],[13,-248]],.9,{c:'#000',dry:.5,tin:.2,tout:.2});E.globalCompositeOperation='source-over';
+  ln([[-15,-234],[0,-236],[15,-233]],2.4,{dry:.2,tin:.05,tout:.05});
+  /* vermilion seal cord at the hip */
+  f.R([[30,-84],[36,-62],[32,-48]],2.2,{dry:.2,tin:.05,tout:.4});f.RS([[28,-50],[38,-50],[38,-38],[28,-38]],.95);
+  /* ink pooling where the brush tip touches the paper */
+  f.W([[-80,14],[-60,8],[-40,12],[-52,22],[-76,22]],.4);
+};
+function drawCalligrapher(g,e,x,y,flip){drawSprite(g,foeSprite('calligrapher',_ch6pal()),x,y,SCALE,flip)}
+function drawCalliSeal(g,x,y,i,done){ch5Seal(g,x,y,26,['壱','弐','参'][i|0]||'印',TH,!!done,(i|0)+11)}
+/* kanji walls: real stroke order in a 100-unit box (centre origin) */
+const CALLI_KANJI={
+  '止':[[[2,-44],[2,-4],[1,38]],[[2,-6],[18,-7],[32,-8]],[[-24,-14],[-24,10],[-24,36]],[[-44,40],[0,39],[46,38]]],
+  '戸':[[[-30,-44],[0,-45],[30,-44]],[[-26,-26],[-26,4],[-32,26],[-44,44]],[[-26,-26],[30,-27],[30,6]],[[-26,6],[2,6],[30,6]]],
+  '封':[[[-44,-30],[-10,-32]],[[-27,-46],[-27,-14]],[[-48,-12],[-6,-14]],[[-44,12],[-10,10]],[[-27,-6],[-27,36]],[[-50,42],[-28,37],[-4,30]],[[2,-16],[26,-17],[48,-18]],[[32,-46],[32,0],[32,40],[24,34]],[[12,2],[18,12]]]
+};
+const CALLI_CHARS=['止','戸','封'];
+function _calliPts(P,s,i,seed){
+  const S=spline(P.map(p=>[p[0]*s/100,p[1]*s/100]),false,1.5),n=S.length,out=[];let acc=0;
+  for(let j=0;j<n;j++){if(j)acc+=Math.hypot(S[j][0]-S[j-1][0],S[j][1]-S[j-1][1]);const t=j/(n-1);
+    const a=S[Math.max(0,j-1)],b=S[Math.min(n-1,j+1)],dx=b[0]-a[0],dy=b[1]-a[1],vert=Math.abs(dy)/(Math.hypot(dx,dy)||1);
+    const press=t<.1?1.25-t*2:t>.8?1.05-(t-.8)/.2*.6:1.05-(t-.1)*.15+.12*Math.sin(t*9+i);
+    out.push({x:S[j][0],y:S[j][1],w:s*.14*press*(.68+.42*vert),d:.08+Math.pow(t,1.6)*.55,s:acc+i*50})}
+  return out;
+}
+/* the Calligrapher's wall: one great horizontal-stroke bar laid exactly on the rule segment (covers the 11 px hit),
+   with a column/row of kanji written along it in stroke order. Baked at the device scale in world-aligned bboxes. */
+function _wallBake(pal,w,K){
+  const ax=w.ax,ay=w.ay,bx=w.bx,by=w.by,L=Math.hypot(bx-ax,by-ay)||1,ux=(bx-ax)/L,uy=(by-ay)/L,nx=-uy,ny=ux,pad=54;
+  const X0=Math.min(ax,bx)-pad,Y0=Math.min(ay,by)-pad,Wd=Math.abs(bx-ax)+pad*2,Ht=Math.abs(by-ay)+pad*2,seed=((ax*7+ay*13+bx*3+by)|0)|1,r=mulberry(seed);
+  const mkL=()=>{const o=_ch6c(Wd,Ht,K);o.g.translate(-X0,-Y0);return o};
+  /* the bar: pressed in at a, steady, lifting at b; overshoots each end a little so the ends of the rule are inked */
+  const bar=[],n=Math.max(6,Math.round(L/8));let acc=0;
+  for(let i=0;i<=n;i++){const t=i/n,o=(vnoise(seed,t*3)-.5)*2.2,e=-3+t*(L+6),px=ax+ux*e+nx*o,py=ay+uy*e+ny*o;if(i)acc+=L/n;
+    bar.push({x:px,y:py,w:23*(t<.08?1.18-t*1.5:t>.9?1.06-(t-.9)*2.2:1.02+.06*Math.sin(t*7)),d:.04+t*.22,s:acc})}
+  /* glyphs: upright, every ~70 px, centred on the bar */
+  /* glyphs: upright, every ~66 px, written in a column beside the bar (thinner ink: they are not the wall) */
+  const cnt=Math.max(1,Math.round(L/66)),gl=[],off=-31;
+  for(let i=0;i<cnt;i++){const t=(i+.5)/cnt,ch=CALLI_CHARS[(seed+i)%3],cx=ax+ux*L*t+nx*off,cy=ay+uy*L*t+ny*off;
+    gl.push((CALLI_KANJI[ch]).map((P,j)=>_calliPts(P,28,j,seed+i).map(p=>({x:p.x+cx,y:p.y+cy,w:p.w,d:p.d,s:p.s}))))}
+  /* telegraph: wet ground + dotted bar + dotted kanji */
+  const tel=mkL();
+  _ch6Band(tel.g,bar.map(p=>[p.x,p.y,1]),30,pal.ink,.09,r);
+  for(let e=0;e<=L;e+=6){const j=hash2(seed,e);blotOn(tel.g,ax+ux*e+nx*(j-.5)*2,ay+uy*e+ny*(j-.5)*2,1.7+j*.9,pal.ink,.8,r)}
+  gl.forEach(G=>G.forEach((P,i)=>{let a=0;for(let j=1;j<P.length;j++){a+=Math.hypot(P[j].x-P[j-1].x,P[j].y-P[j-1].y);if(a<4)continue;a=0;blotOn(tel.g,P[j].x,P[j].y,.8+hash2(i,j)*.5,pal.ink,.4,r)}}));
+  /* the painted bar, baked once */
+  const barC=mkL();
+  {const q=barC.g;q.globalAlpha=1;inkRibbon(q,bar.map(p=>({x:p.x+1.5,y:p.y+2,w:p.w*1.5,d:.85,s:p.s})),pal.ink,{seed:seed+3});
+   const F=mkL();F.g.globalAlpha=1;inkRibbon(F.g,bar,pal.ink,{seed,pool:true});
+   q.setTransform(1,0,0,1,0,0);q.globalCompositeOperation='source-over';
+   /* soften the under-wash to 14 percent, then put the bar on top */
+   const W2=mk(barC.c.width,barC.c.height),w2=W2.getContext('2d');w2.globalAlpha=.14;w2.drawImage(barC.c,0,0);w2.globalAlpha=1;w2.drawImage(F.c,0,0);
+   barC.c=W2}
+  const done=mkL();
+  return{K,X0,Y0,gc:_ch6A(pal.ink,.6),tel:tel.c,bar:barC.c,done:done.c,dg:done.g,gl,max:Math.max(...gl.map(G=>G.length)),nDone:0,fin:null,seed};
+}
+function _wallBlit(g,sp,c){const m=g.getTransform();g.save();g.setTransform(1,0,0,1,0,0);g.drawImage(c,Math.round(m.a*sp.X0+m.e),Math.round(m.d*sp.Y0+m.f));g.restore()}
+function drawCalligrapherWall(g,wall,t,ahead,th){
+  if(!wall)return;ahead=ahead==null?(typeof KANJI_AHEAD==='number'?KANJI_AHEAD:.6):ahead;t=t||0;
+  const at=wall.t||0;if(t<at-ahead)return;
+  const pal=_ch6pal(),K=_ch6K(g),key='wall|'+pal.key+'|'+K+'|'+wall.ax+','+wall.ay+','+wall.bx+','+wall.by;
+  const sp=_ch6Get(key,()=>_wallBake(pal,wall,K));
+  if(t<at){const k=ahead>0?clamp6((t-at+ahead)/ahead,0,1):1,a=g.globalAlpha;g.globalAlpha=a*(.3+.6*k);_wallBlit(g,sp,sp.tel);g.globalAlpha=a;return}
+  /* written: the bar is there at once; the kanji are written stroke by stroke over 0.45 s */
+  const f=clamp6((t-at)/.45,0,1)*sp.max,whole=Math.floor(f);
+  if(whole<sp.nDone){sp.fin=null;sp.dg.save();sp.dg.setTransform(1,0,0,1,0,0);sp.dg.clearRect(0,0,sp.done.width,sp.done.height);sp.dg.restore();sp.nDone=0}
+  while(sp.nDone<Math.min(whole,sp.max)){const j=sp.nDone;sp.gl.forEach((G,i)=>{if(G[j])inkRibbon(sp.dg,G[j],sp.gc,{seed:sp.seed+i*17+j,pool:true})});sp.nDone++}
+  if(whole>=sp.max){if(!sp.fin){const F=mk(sp.bar.width,sp.bar.height),fg=F.getContext('2d');fg.drawImage(sp.bar,0,0);fg.drawImage(sp.done,0,0);sp.fin=F}
+    _wallBlit(g,sp,sp.fin);return}
+  _wallBlit(g,sp,sp.bar);
+  {const a=g.globalAlpha;g.globalAlpha=a*.5;_wallBlit(g,sp,sp.tel);g.globalAlpha=a}
+  _wallBlit(g,sp,sp.done);
+  const u=f-whole;sp.gl.forEach((G,i)=>{const P=G[whole];if(!P)return;const m=Math.max(2,Math.round(u*P.length));if(m>1)inkRibbon(g,P.slice(0,m),sp.gc,{seed:sp.seed+i*17+whole,pool:true})});
+  g.globalAlpha=1;
+}
+/* ===== /CH6 ART PLACEHOLDERS ============================================== */
 /* ===== SOUND ===== everything is synthesised; nothing to load */
 const Snd=(()=>{
   let ac=null,master=null,wet=null,noise=null,bG=null,bF=null,on=true,nextPluck=0,phrase=[],bars=0;
@@ -1378,7 +1962,8 @@ const Snd=(()=>{
 })();
 /* ===== RULES ===== pure logic: the solver in the test harness runs this same code */
 const W=400,H=640,STEP=3,BLAST=86;
-const SPD_FAST=1.6,SPD_SLOW=.5,WET_DELAY=.5,WET_GROW=.3,WET_SIDE=6,TWIN_WIN=.6,BOAT_LEAD=1;
+const SPD_FAST=1.6,SPD_SLOW=.5,WET_DELAY=.5,WET_GROW=.3,WET_SIDE=6,TWIN_GAP=300,BOAT_LEAD=1;
+const TORII_OPEN=70,GHOST_MIN=60,TANUKI_REACH=50,TANUKI_TAX=.25,WELL_REFILL=.3,FOG_R=140,ECHO_GAP=300,KANJI_EVERY=1.2,KANJI_AHEAD=.6,GHOST_DISSOLVE=.4,WELL_SPLASH=.5;
 const clamp=(v,a,b)=>v<a?a:v>b?b:v,lerp=(a,b,t)=>a+(b-a)*t,hyp=Math.hypot;
 function pathLen(p){let l=0;for(let i=1;i<p.length;i++)l+=hyp(p[i].x-p[i-1].x,p[i].y-p[i-1].y);return l}
 function _pt(arr,n,x,y){let o=arr[n];if(!o)o=arr[n]={x:0,y:0};o.x=x;o.y=y;return o}
@@ -1408,7 +1993,8 @@ const TYPES={
   m:{t:'monk',r:21,hp:1},g:{t:'gunner',r:21,hp:1},k:{t:'keg',r:18,hp:1},v:{t:'villager',r:17,hp:0},
   w:{t:'wraith',r:23,hp:1},o:{t:'oni',r:34,hp:3},
   c:{t:'captain',r:27,hp:1,boss:1},b:{t:'abbot',r:27,hp:1,boss:1},l:{t:'lord',r:29,hp:1,boss:1},x:{t:'rival',r:27,hp:1,boss:1},
-  n:{t:'boatman',r:21,hp:1},p:{t:'twin',r:21,hp:1},h:{t:'dragon',r:27,hp:1,boss:1,ord:0},d:{t:'dragon',r:21,hp:1}
+  n:{t:'boatman',r:21,hp:1},p:{t:'twin',r:21,hp:1},h:{t:'dragon',r:27,hp:1,boss:1,ord:0},d:{t:'dragon',r:21,hp:1},
+  y:{t:'ghostlord',r:23,hp:1},u:{t:'tanuki',r:21,hp:1},i:{t:'inkwell',r:18,hp:1},j:{t:'cseal',r:21,hp:1}
 };
 function inRect(p,z){return p.x>=z.x&&p.x<=z.x+z.w&&p.y>=z.y&&p.y<=z.y+z.h}
 function inWater(r,p){return (r.waters||[]).some(z=>inRect(p,z))}
@@ -1422,7 +2008,7 @@ function strokeCost(r,pts){
 }
 function wetExtra(age){if(age<WET_DELAY)return 0;return WET_SIDE*clamp((age-WET_DELAY)/WET_GROW,0,1)}
 function makeRoom(def){
-  const r={s:{x:def.s[0],y:def.s[1]},ents:[],rocks:[],walls:[],ropes:[],lanes:[],arrows:[],waters:[],rains:[],mirror:null,T:0,tl:def.t||0,riv:null};
+  const r={s:{x:def.s[0],y:def.s[1]},ents:[],rocks:[],walls:[],ropes:[],lanes:[],arrows:[],waters:[],rains:[],mirror:null,torii:[],kanji:[],fog:0,T:0,tl:def.t||0,riv:null,ink:def.ink||0};
   for(const d of def.e){
     const c=d[0];
     if(c==='R'){r.rocks.push({x:d[1],y:d[2],r:d[3]});continue}
@@ -1430,6 +2016,10 @@ function makeRoom(def){
     if(c==='M'){r.mirror={y:d[1],dir:d[2]==null?1:d[2]};continue}
     if(c==='W'){r.waters.push({x:d[1],y:d[2],w:d[3],h:d[4]});continue}
     if(c==='Z'){r.rains.push({x:d[1],y:d[2],w:d[3],h:d[4]});continue}
+    if(c==='F'){r.fog=1;continue}
+    if(c==='T'){const a=(d[3]||0)*Math.PI/180,ux=Math.cos(a),uy=Math.sin(a),h=TORII_OPEN/2;
+      r.torii.push({x:d[1],y:d[2],ang:d[3]||0,ux,uy,ax:d[1]-uy*h,ay:d[2]+ux*h,bx:d[1]+uy*h,by:d[2]-ux*h});continue}
+    if(c==='K'){r.kanji.push({ax:d[1],ay:d[2],bx:d[3],by:d[4],t:(d[5]||0)*KANJI_EVERY});continue}
     const e=Object.assign({},TYPES[c],{c,x:d[1],y:d[2],dead:false,id:r.ents.length});
     if(c==='s'){const a=(d[3]==null?Math.atan2(r.s.y-e.y,r.s.x-e.x)*180/Math.PI:d[3])*Math.PI/180;e.fx=Math.cos(a);e.fy=Math.sin(a);e.ang=a}
     if(c==='m'){r.ropes.push({owner:e.id,ax:d[3],ay:d[4],bx:d[5],by:d[6]})}
@@ -1450,8 +2040,48 @@ function makeRoom(def){
     if(c==='d'){e.ord=d[3];e.vx=d[4]||0;e.vy=d[5]||0}
     r.ents.push(e);
   }
+  if(def.echo)attachEcho(r,def.echo,def.echoTimes);
   return r;
 }
+function attachEcho(r,pts,times){
+  if(!pts||pts.length<2)return;
+  const p=pts.map(a=>Array.isArray(a)?{x:a[0],y:a[1],t:a[2]}:({x:a.x,y:a.y,t:a.t}));
+  const rs=resample(p,STEP);
+  r.riv={pts:rs,len:pathLen(p),secs:1,gap:ECHO_GAP,echo:1,times:times||(p[0]&&p[0].t!=null?p.map(q=>q.t):null)};
+}
+function isCalligrapher(def){return !!(def&&(def.boss==='calligrapher'||def.boss===1))}
+function pickSol(def,spd){
+  if(!def)return null;
+  if(def.sol&&!Array.isArray(def.sol)&&(def.sol[spd]||def.sol[String(spd)]))return def.sol[spd]||def.sol[String(spd)];
+  if(spd<=500&&def.solSlow)return def.solSlow;
+  if(spd>=1600&&def.solFast)return def.solFast;
+  return def.sol;
+}
+function pickNaive(def,spd){
+  if(!def)return null;
+  if(def.naive&&!Array.isArray(def.naive)&&(def.naive[spd]||def.naive[String(spd)]))return def.naive[spd]||def.naive[String(spd)];
+  return def.naive;
+}
+function inPoly(pt,poly){let ins=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if(((a.y>pt.y)!==(b.y>pt.y))&&pt.x<(b.x-a.x)*(pt.y-a.y)/((b.y-a.y)||1e-9)+a.x)ins=!ins}return ins}
+function segIntersection(a,b,c,d){
+  if(!segX(a.x,a.y,b.x,b.y,c.x,c.y,d.x,d.y))return null;
+  const den=(a.x-b.x)*(c.y-d.y)-(a.y-b.y)*(c.x-d.x);if(!den)return null;
+  const u=((a.x-c.x)*(c.y-d.y)-(a.y-c.y)*(c.x-d.x))/den;
+  return{x:a.x+u*(b.x-a.x),y:a.y+u*(b.y-a.y)};
+}
+function closedLoops(q,n){
+  const out=[];
+  for(let i=2;i<(n||q.length)-1;i++)for(let j=0;j<i-2;j++){
+    const ix=segIntersection(q[j],q[j+1],q[i],q[i+1]);if(!ix)continue;
+    const poly=q.slice(j+1,i+1).concat([ix]);if(poly.length<3)continue;
+    let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const p of poly){if(p.x<x0)x0=p.x;if(p.y<y0)y0=p.y;if(p.x>x1)x1=p.x;if(p.y>y1)y1=p.y}
+    if(x1-x0<GHOST_MIN||y1-y0<GHOST_MIN)continue;
+    out.push({poly,s:(i+1)*STEP,pt:ix});
+  }
+  return out;
+}
+function toriiBack(g,a,b){if(!segX(a.x,a.y,b.x,b.y,g.ax,g.ay,g.bx,g.by))return false;return ((b.x-a.x)*g.ux+(b.y-a.y)*g.uy)<0}
+
 function entPos(e,T){
   if(e.vx||e.vy)return{x:e.x+(e.vx||0)*T,y:e.y+(e.vy||0)*T};
   if(!e.drift)return{x:e.x,y:e.y};
@@ -1459,7 +2089,17 @@ function entPos(e,T){
   return{x:lerp(e.ax,e.bx,k),y:lerp(e.ay,e.by,k)};
 }
 function arrowTip(a,T){return{x:a.x+a.dx*a.spd*T,y:a.y+a.dy*a.spd*T}}
-function rivalVisible(r,T){if(!r.riv)return[];const n=Math.floor(clamp(T/r.riv.secs,0,1)*(r.riv.pts.length-1));return r.riv.pts.slice(0,n+1)}
+function rivalVisible(r,T,spd,along){
+  if(!r.riv)return[];
+  if(r.riv.echo){
+    const gap=r.riv.gap!=null?r.riv.gap:ECHO_GAP;
+    const traveled=along!=null?along:(spd||1600)*T;
+    const k=Math.floor((traveled-gap)/STEP);
+    if(k<0)return[];
+    return r.riv.pts.slice(0,Math.min(k,r.riv.pts.length-1)+1);
+  }
+  const n=Math.floor(clamp(T/r.riv.secs,0,1)*(r.riv.pts.length-1));return r.riv.pts.slice(0,n+1);
+}
 const AN={q:[],st:[],kegs:[],blown:[],fail:null,failS:Infinity,failPt:null,len:0,win:false,left:0};
 function _snapAn(a){
   const st=a.st.map(m=>({e:m.e,p:{x:m.p.x,y:m.p.y},inside:m.inside,hits:m.hits,doneS:m.doneS,contacts:m.contacts.map(c=>({s:c.s,x:c.x,y:c.y,dx:c.dx,dy:c.dy,fired:c.fired})),blast:m.blast,lunge:m.lunge}));
@@ -1472,10 +2112,10 @@ function analyze(r,pts,keep){
   for(let i=0;i<r.ents.length;i++){
     let m=st[i];if(!m)m=st[i]={e:null,p:{x:0,y:0},inside:false,hits:0,doneS:Infinity,contacts:[],blast:false,lunge:0,min:false};
     const e=r.ents[i],p=entPos(e,T);
-    m.e=e;m.p.x=p.x;m.p.y=p.y;m.inside=false;m.hits=0;m.doneS=Infinity;m.contacts.length=0;m.blast=false;m.lunge=0;m.min=false;
+    m.e=e;m.p.x=p.x;m.p.y=p.y;m.inside=false;m.hits=0;m.doneS=Infinity;m.contacts.length=0;m.blast=false;m.lunge=0;m.min=false;m.wellPaid=0;m.inRing=0;
   }
   st.length=r.ents.length;
-  const out=AN;out.q=q;out.st=st;out.fail=null;out.failS=Infinity;out.failPt=null;out.len=(n-1)*STEP;out.win=false;out.left=0;out.blown.length=0;out.kegs.length=0;out.cost=0;out.dragonMiss=0;
+  const out=AN;out.q=q;out.st=st;out.fail=null;out.failS=Infinity;out.failPt=null;out.len=(n-1)*STEP;out.win=false;out.left=0;out.blown.length=0;out.kegs.length=0;out.cost=0;out.dragonMiss=0;out.drained=false;out.spare=0;out.brk=null;out.cutN=0;out.inkLeft=null;
   const bad=(why,s,p)=>{if(s<out.failS){out.fail=why;out.failS=s;out.failPt=p}};
   const riv=rivalVisible(r,T);
   const moving=e=>e.vx||e.vy;
@@ -1490,6 +2130,7 @@ function analyze(r,pts,keep){
     m.inside=true;
     if(e.t==='villager'){bad('villager',s,b);return}
     if(e.t==='shield'&&m.hits===0&&((b.x-e.x)*e.fx+(b.y-e.y)*e.fy)/(d||1)>.12){bad('shield',s,b);return}
+    if(e.t==='ghostlord'){return}
     if(e.t==='dragon'&&!readyDragon(e.ord)){out.dragonMiss++;return}
     m.hits++;
     const k=m.contacts.length;let c=m.contacts[k];if(!c)c=m.contacts[k]={s:0,x:0,y:0,dx:0,dy:0,fired:0};c.s=s;c.x=b.x;c.y=b.y;c.dx=b.x-a.x;c.dy=b.y-a.y;c.fired=0;m.contacts.length=k+1;
@@ -1514,20 +2155,38 @@ function analyze(r,pts,keep){
     for(const w of r.ropes){if(st[w.owner].e.dead)continue;if(st[w.owner].doneS<=s)continue;if(segX(a.x,a.y,b.x,b.y,w.ax,w.ay,w.bx,w.by))bad('ward',s,b)}
     for(const w of r.lanes){if(st[w.owner].e.dead)continue;if(st[w.owner].doneS<=s)continue;if(segX(a.x,a.y,b.x,b.y,w.ax,w.ay,w.bx,w.by))bad('lane',s,b)}
     for(const w of r.arrows){const tip=arrowTip(w,T);if(distSeg(b.x,b.y,tip.x-w.dx*w.len,tip.y-w.dy*w.len,tip.x,tip.y)<5)bad('arrow',s,b)}
-    if(r.rivOwner!=null&&st[r.rivOwner].doneS>s)for(let k=8;k<riv.length;k+=2){if(hyp(b.x-riv[k].x,b.y-riv[k].y)<8){bad('rival',s,b);break}}
+    if(r.riv){
+      const rivNow=r.riv.echo?rivalVisible(r,ti,null,s):riv;
+      const own=r.riv.echo||(r.rivOwner!=null&&st[r.rivOwner].doneS>s);
+      if(own){const start=r.riv.echo?0:8,step=r.riv.echo?1:2;for(let k=start;k<rivNow.length;k+=step){if(hyp(b.x-rivNow[k].x,b.y-rivNow[k].y)<8){bad('rival',s,b);out.brk=out.brk||'echo';break}}}
+    }
+    for(const g of r.torii||[])if(toriiBack(g,a,b)){bad('torii',s,b);out.brk=out.brk||'torii';break}
+    for(const w of r.kanji||[])if(ti>=w.t&&segDist(a,b,{x:w.ax,y:w.ay},{x:w.bx,y:w.by})<11){bad('kanji',s,b);out.brk=out.brk||'kanji';break}
+    if(r.ink){
+      let left=(out.inkLeft!=null?out.inkLeft:r.ink)-STEP*(inWater(r,mid)?2:1);
+      for(let j=0;j<st.length;j++){const m=st[j];if(m.e.t==='inkwell'&&m.doneS<=s&&!m.wellPaid){m.wellPaid=1;left=Math.min(r.ink,left+WELL_REFILL*r.ink)}}
+      if(!out.drained)for(let j=0;j<st.length;j++){const m=st[j],e=m.e;if(e.t!=='tanuki'||e.dead)continue;
+        const near=hyp(b.x-e.x,b.y-e.y)<TANUKI_REACH;
+        if(near)m.inRing=1;
+        else if(m.inRing){m.inRing=0;if(!(m.doneS<=s)){left*=(1-TANUKI_TAX);out.drained=true;break}}}
+      out.inkLeft=left;if(out.spare===0||left<out.spare)out.spare=left;
+      if(left<0){bad('ink',s,b);out.brk=out.brk||'ink'}
+    }
+    if(out.brk){out.cutN=i+1;break}
   }
-  /* twins: no set order; both must fall within TWIN_WIN seconds */
+  /* twins: no set order; both must fall within TWIN_GAP px of stroke path, any speed */
   const pairs={};
   st.forEach((m,j)=>{if(m.e.t==='twin'&&m.e.pair!=null)(pairs[m.e.pair]=pairs[m.e.pair]||[]).push(m)});
   const spd=T>0&&pathLenS>0?pathLenS/T:SPD_FAST;
-  const timeOf=m=>m.doneS<Infinity?(q[Math.min(n-1,Math.round(m.doneS/STEP))]&&q[Math.min(n-1,Math.round(m.doneS/STEP))].t!=null?tAt(Math.min(n-1,Math.round(m.doneS/STEP))):m.doneS/spd):null;
+  out.twinGaps=[];
   for(const k in pairs){
     const ms=pairs[k];
     const done=ms.filter(m=>m.doneS<Infinity).sort((a,b)=>a.doneS-b.doneS);
     if(!done.length)continue;
     if(done.length<ms.length){const last=done[done.length-1];bad('twins',last.doneS,last.p);continue}
-    const t0=timeOf(done[0]),t1=timeOf(done[done.length-1]);
-    if(t0!=null&&t1!=null&&t1-t0>TWIN_WIN+1e-6)bad('twins',done[done.length-1].doneS,done[done.length-1].p);
+    const gap=done[done.length-1].doneS-done[0].doneS;
+    out.twinGaps.push({pair:k,gap});
+    if(gap>TWIN_GAP+1e-6)bad('twins',done[done.length-1].doneS,done[done.length-1].p);
   }
   /* wet paper: spread never cuts a foe; it fails only if it touches a villager */
   if((r.rains||[]).length){
@@ -1546,6 +2205,13 @@ function analyze(r,pts,keep){
       }
     });
   }
+  /* ghost lords: a closed loop of at least GHOST_MIN px around the centre kills them when it closes */
+  const loopN=out.cutN||n,loops=closedLoops(q,loopN);
+  for(let j=0;j<st.length;j++){
+    const m=st[j];if(m.e.t!=='ghostlord'||m.e.dead||m.doneS<Infinity)continue;
+    for(const lp of loops){if(inPoly(m.p,lp.poly)){m.doneS=lp.s;m.hits=Math.max(m.hits,1);m.contacts.push({s:lp.s,x:lp.pt.x,y:lp.pt.y,dx:0,dy:0,fired:0});break}}
+  }
+  if(out.cutN){out.len=(out.cutN-1)*STEP}
   /* powder: every keg that was cut goes up once the blade is home */
   const kegs=out.kegs;for(let i=0;i<st.length;i++){const m=st[i];if(m.e.t==='keg'&&!m.e.dead)kegs.push(m)}
   const blown=out.blown;for(let i=0;i<kegs.length;i++)if(kegs[i].doneS<Infinity)blown.push(kegs[i]);
@@ -1558,13 +2224,19 @@ function analyze(r,pts,keep){
     let inBlast=false;for(let j=0;j<blown.length;j++)if(hyp(end.x-blown[j].e.x,end.y-blown[j].e.y)<BLAST){inBlast=true;break}
     if(inBlast)bad('blast',out.len,end);
   }
-  for(let i=0;i<st.length;i++){const m=st[i],e=m.e;if(e.dead||e.t==='keg'||e.t==='villager')continue;if(m.doneS===Infinity&&!m.blast)out.left++}
+  for(let i=0;i<st.length;i++){const m=st[i],e=m.e;if(e.dead||e.t==='keg'||e.t==='villager'||e.t==='inkwell')continue;if(m.doneS===Infinity&&!m.blast)out.left++}
   out.win=!out.fail&&out.left===0;
   return keep?_snapAn(out):out;
 }
-function hitsSolid(r,a,b){
+function hitsSolid(r,a,b,t){
+  if(t==null)t=r.T||0;
   for(const s of r.rocks)if(distSeg(s.x,s.y,a.x,a.y,b.x,b.y)<s.r)return s;
   for(const w of r.walls)if(segDist(a,b,{x:w.ax,y:w.ay},{x:w.bx,y:w.by})<11)return w;
+  return null;
+}
+function hitsKanji(r,a,b,t){
+  if(t==null)t=r.T||0;
+  for(const w of r.kanji||[])if(t>=w.t&&segDist(a,b,{x:w.ax,y:w.ay},{x:w.bx,y:w.by})<11)return w;
   return null;
 }
 /* Hundred Cuts v2 (level designer): seeded per run, second half adds monks (12), gunners (15), kegs (18), oni (24); no single-soldier fallback */
@@ -1690,7 +2362,7 @@ const CH=[
     {s:[60,590],e:[['x',330,120,2,[[330,300],[120,240],[120,420],[300,480]],9],['s',200,330,90],['f',60,200]]},
     {s:[340,590],t:7,e:[['x',70,100,3,[[200,120],[200,300],[60,380],[200,500]],11],['a',350,180],['o',300,370],['k',110,260],['f',60,190]]}]}
  ]},
- {th:4,lv:[{"n":"Rain on the Reeds","s":[200,590],"e":[["Z",0,200,400,260],["f",100,440],["f",300,350],["f",110,260],["f",290,130],["v",205,369],["v",200,150]],"hint":"In the rain your line bleeds wider. Give villagers room.","sol":[[200,590],[100,440],[200,420],[260,400],[300,350],[110,260],[290,130]],"naive":[[200,590],[100,440],[300,350],[110,260],[290,130]],"ink":1084,"par":941},{"n":"Ferry Landing","s":[200,600],"par":1184,"e":[["W",0,200,180,260],["W",220,200,180,260],["f",90,520],["f",310,520],["f",90,150],["f",310,150],["f",200,85]],"hint":"Ink costs double over water. Cross where the river is dry.","sol":[[200,600],[90,520],[310,520],[200,465],[200,195],[310,150],[200,85],[90,150]],"naive":[[200,600],[90,520],[310,520],[310,150],[200,85],[90,150]],"naiveWhy":"over par","ink":1436},{"n":"Still Pond","s":[380,600],"e":[["M",330],["L",40,410,360,410],["L",40,520,360,520],["L",40,410,40,520],["L",360,410,360,520],["f",120,200],["f",280,200],["f",120,465],["f",280,465]],"hint":"Above the waterline, your reflection cuts too.","sol":[[380,600],[380,330],[280,200],[120,200]],"naive":[[380,600],[380,330],[280,250],[120,250]],"ink":773,"par":667},{"n":"Two Banks","s":[60,600],"t":5,"e":[["M",320],["a",200,190],["f",300,150],["f",90,110],["f",300,490],["v",110,480],["f",200,560]],"hint":"Your reflection can kill a villager too.","sol":[[60,600],[200,560],[330,330],[300,150],[200,190],[90,110]],"naive":[[60,600],[200,560],[330,330],[300,150],[200,190],[100,200],[90,110]],"ink":1076,"par":935},{"n":"Driftwood","s":[200,600],"e":[["n",80,390,0,40],["n",320,310,0,40],["n",80,200,0,40],["n",320,110,0,40]],"hint":"Boatmen drift while your brush is down. Cut where the ghost will be.","sol":[[200,600],[80,390],[320,310],[80,200],[320,110]],"map":[[1,0],[2,1],[3,2],[4,3]],"naiveMap":[],"naive":[[200,600],[80,390],[320,310],[80,200],[320,110]],"ink":1286,"par":1120},{"n":"Night Ferry","s":[200,600],"e":[["Z",0,150,400,330],["n",70,410,0,40],["v",170,450],["n",330,320,0,40],["v",230,300],["n",80,210,0,40],["f",300,130],["v",200,190]],"sol":[[200,600],[70,410],[330,320],[215,360],[80,210],[140,140],[300,130]],"map":[[1,1],[2,3],[4,5]],"naive":[[200,600],[70,410],[330,320],[80,210],[300,130]],"naiveMap":[[1,1],[2,3],[3,5]],"ink":1373,"par":1195},{"n":"Two Herons","s":[200,600],"e":[["p",90,430,1],["p",310,430,1],["f",200,340],["p",90,190,2],["p",310,190,2],["f",200,110]],"hint":"Twins share a thread. Cut the second within a breath of the first.","sol":[[200,600],[90,430],[310,430],[200,340],[90,190],[310,190],[200,110]],"naive":[[200,600],[90,430],[200,340],[90,190],[310,190],[200,110],[310,430]],"ink":1414,"par":1232},{"n":"Pond Twins","s":[60,600],"e":[["M",330],["p",120,200,1],["p",120,460,1],["p",300,520,2],["f",300,150],["p",300,300,2],["f",200,250],["v",235,425]],"sol":[[60,600],[300,520],[380,420],[300,300],[300,150],[200,232],[190,250],[120,200]],"naive":[[60,600],[120,460],[300,520],[300,150],[300,300],[200,250],[120,200]],"ink":1170,"par":1017},{"n":"Flood Season","s":[200,600],"e":[["W",0,250,400,150],["Z",0,60,400,190],["n",40,290,40,0],["n",360,360,-40,0],["p",200,455,1],["p",200,195,1],["f",320,500],["f",80,500],["f",80,160],["v",140,145],["v",260,215]],"sol":[[200,600],[80,500],[320,500],[200,455],[200,195],[80,160],[40,290],[360,360]],"map":[[6,2],[7,3]],"naiveMap":[],"naive":[[200,600],[80,500],[320,500],[200,455],[200,195],[80,160],[40,290],[360,360]],"ink":2246,"par":1964},{"n":"The River Dragon","boss":"dragon","phases":[{"s":[200,600],"e":[["M",330,1],["h",200,110,0,0],["d",300,160,1,0,0],["d",300,260,2,0,0],["d",200,300,3,0,0],["d",100,400,4,0,0],["d",200,450,5,0,0],["d",300,500,6,0,0],["v",255,410]],"sol":[[200,600],[380,560],[380,110],[200,110],[300,160],[300,260],[200,300],[100,400],[200,450],[300,500]],"naive":[[200,600],[300,500],[200,450],[100,400],[200,300],[300,260],[300,160],[200,110]],"ink":1905,"par":1664},{"s":[200,600],"e":[["M",330,-1],["L",0,300,400,300],["h",200,140,0,0],["d",300,500,1,0,0],["d",300,200,2,0,0],["d",200,470,3,0,0],["d",100,190,4,0,0],["d",100,560,5,0,0],["d",250,170,6,0,0],["v",250,570]],"sol":[[200,600],[200,520],[300,500],[300,460],[200,470],[100,470],[100,560],[250,490]],"naive":[[200,600],[100,560],[200,470],[300,500],[200,520]],"ink":878,"par":760},{"s":[200,600],"e":[["M",330,1],["h",60,120,30,0],["d",140,170,1,30,0],["d",220,120,2,30,0],["d",300,170,3,30,0],["d",300,450,4,30,0],["d",200,500,5,30,0],["d",100,450,6,30,0]],"sol":[[200,600],[30,400],[60,120],[140,170],[220,120],[300,170],[300,450],[200,500],[100,450]],"map":[[2,1],[3,2],[4,3],[5,4],[6,5],[7,6],[8,7]],"naive":[[200,600],[100,450],[200,500],[300,450],[300,170],[220,120],[140,170],[60,120]],"naiveMap":[[1,7],[2,6],[3,5],[4,4],[5,3],[6,2],[7,1]],"ink":1706,"par":1489}]}]}
+ {th:4,lv:[{"n":"Rain on the Reeds","s":[200,590],"e":[["Z",0,200,400,260],["f",100,440],["f",300,350],["f",110,260],["f",290,130],["v",205,369],["v",200,150]],"hint":"In the rain your line bleeds wider. Give villagers room.","sol":[[200,590],[100,440],[200,420],[260,400],[300,350],[110,260],[290,130]],"naive":[[200,590],[100,440],[300,350],[110,260],[290,130]],"ink":1084,"par":941},{"n":"Ferry Landing","s":[200,600],"par":1184,"e":[["W",0,200,180,260],["W",220,200,180,260],["f",90,520],["f",310,520],["f",90,150],["f",310,150],["f",200,85]],"hint":"Ink costs double over water. Cross where the river is dry.","sol":[[200,600],[90,520],[310,520],[200,465],[200,195],[310,150],[200,85],[90,150]],"naive":[[200,600],[90,520],[310,520],[310,150],[200,85],[90,150]],"naiveWhy":"over par","ink":1436},{"n":"Still Pond","s":[380,600],"e":[["M",330],["L",40,410,360,410],["L",40,520,360,520],["L",40,410,40,520],["L",360,410,360,520],["f",120,200],["f",280,200],["f",120,465],["f",280,465]],"hint":"Above the waterline, your reflection cuts too.","sol":[[380,600],[380,330],[280,200],[120,200]],"naive":[[380,600],[380,330],[280,250],[120,250]],"ink":773,"par":667},{"n":"Two Banks","s":[60,600],"t":5,"e":[["M",320],["a",200,190],["f",300,150],["f",90,110],["f",300,490],["v",110,480],["f",200,560]],"hint":"Your reflection can kill a villager too.","sol":[[60,600],[200,560],[330,330],[300,150],[200,190],[90,110]],"naive":[[60,600],[200,560],[330,330],[300,150],[200,190],[100,200],[90,110]],"ink":1076,"par":935},{"n":"Driftwood","s":[200,600],"e":[["n",80,390,0,40],["n",320,310,0,40],["n",80,200,0,40],["n",320,110,0,40]],"hint":"Boatmen drift while your brush is down. Cut where the ghost will be.","sol":[[200,600],[80,390],[320,310],[80,200],[320,110]],"map":[[1,0],[2,1],[3,2],[4,3]],"naiveMap":[],"naive":[[200,600],[80,390],[320,310],[80,200],[320,110]],"ink":1286,"par":1120},{"n":"Night Ferry","s":[200,600],"e":[["Z",0,150,400,330],["n",70,410,0,40],["v",170,450],["n",330,320,0,40],["v",230,300],["n",80,210,0,40],["f",300,130],["v",200,190]],"sol":[[200,600],[70,410],[330,320],[215,360],[80,210],[140,140],[300,130]],"map":[[1,1],[2,3],[4,5]],"naive":[[200,600],[70,410],[330,320],[80,210],[300,130]],"naiveMap":[[1,1],[2,3],[3,5]],"ink":1373,"par":1195},{"n":"Two Herons","s":[200,600],"e":[["p",90,430,1],["p",310,430,1],["f",200,340],["p",90,190,2],["p",310,190,2],["f",200,110]],"hint":"Twins share a thread. Cut the second within a breath of the first.","sol":[[200,600],[90,430],[310,430],[200,340],[90,190],[310,190],[200,110]],"naive":[[200,600],[90,430],[200,340],[90,190],[310,190],[200,110],[310,430]],"ink":1414,"par":1232},{"n":"Pond Twins","s":[60,600],"e":[["M",330],["p",120,200,1],["p",120,460,1],["p",300,520,2],["f",300,150],["p",300,300,2],["f",200,250],["v",235,425]],"sol":[[60,600],[300,520],[380,420],[300,300],[300,150],[200,232],[190,250],[120,200]],"naive":[[60,600],[120,460],[300,520],[300,150],[300,300],[200,250],[120,200]],"ink":1170,"par":1017},{"n":"Flood Season","s":[200,600],"e":[["W",0,250,400,150],["Z",0,60,400,190],["n",40,290,40,0],["n",360,360,-40,0],["p",200,455,1],["p",200,195,1],["f",320,500],["f",80,500],["f",80,160],["v",140,145],["v",260,215]],"sol":[[200,600],[80,500],[320,500],[200,455],[200,195],[80,160],[40,290],[360,360]],"map":[[6,2],[7,3]],"naiveMap":[],"naive":[[200,600],[80,500],[320,500],[200,455],[200,195],[80,160],[40,290],[360,360]],"ink":2246,"par":1964},{"n":"The River Dragon","boss":"dragon","phases":[{"s":[200,600],"e":[["M",330,1],["h",200,110,0,0],["d",300,160,1,0,0],["d",300,260,2,0,0],["d",200,300,3,0,0],["d",100,400,4,0,0],["d",200,450,5,0,0],["d",300,500,6,0,0],["v",255,410]],"sol":[[200,600],[380,560],[380,110],[200,110],[300,160],[300,260],[200,300],[100,400],[200,450],[300,500]],"naive":[[200,600],[300,500],[200,450],[100,400],[200,300],[300,260],[300,160],[200,110]],"ink":1905,"par":1664},{"s":[200,600],"e":[["M",330,-1],["L",0,300,400,300],["h",200,140,0,0],["d",300,500,1,0,0],["d",300,200,2,0,0],["d",200,470,3,0,0],["d",100,190,4,0,0],["d",100,560,5,0,0],["d",250,170,6,0,0],["v",250,570]],"sol":[[200,600],[200,520],[300,500],[300,460],[200,470],[100,470],[100,560],[250,490]],"naive":[[200,600],[100,560],[200,470],[300,500],[200,520]],"ink":878,"par":760},{"s":[200,600],"e":[["M",330,1],["h",60,120,30,0],["d",140,170,1,30,0],["d",220,120,2,30,0],["d",300,170,3,30,0],["d",300,450,4,30,0],["d",200,500,5,30,0],["d",100,450,6,30,0]],"sol":[[200,600],[30,400],[60,120],[140,170],[220,120],[300,170],[300,450],[200,500],[100,450]],"map":[[2,1],[3,2],[4,3],[5,4],[6,5],[7,6],[8,7]],"naive":[[200,600],[100,450],[200,500],[300,450],[300,170],[220,120],[140,170],[60,120]],"naiveMap":[[1,7],[2,6],[3,5],[4,4],[5,3],[6,2],[7,1]],"ink":1706,"par":1489}]}]},{th:5,lv:[{"n":"Shrine Gate","hint":"A torii lets you through one way only. Follow the arrow.","s":[200,600],"e":[["L",0,320,165,320],["L",235,320,400,320],["T",200,320,-90],["f",80,450],["f",320,450],["f",100,180],["f",300,180],["f",200,520]],"sol":[[200,600],[200,520],[80,450],[320,450],[200,330],[200,250],[100,180],[300,180]],"naive":[[200,600],[200,520],[200,250],[100,180],[300,180],[200,250],[200,390],[80,450],[320,450]],"ink":1304,"par":1149},{"n":"Pale Lord","hint":"A ghost lord falls only inside a closed loop.","s":[200,600],"e":[["y",200,335],["f",305,335],["f",200,215],["f",95,335]],"sol":[[200,600],[200,450],[305,335],[200,215],[95,335],[215,490]],"naive":[[200,600],[200,450],[305,335],[200,215],[95,335]],"ink":1039,"par":918},{"n":"Two Gates","hint":"Up one gate, down the other. Close the loop.","s":[200,600],"e":[["L",0,330,65,330],["L",135,330,265,330],["L",335,330,400,330],["T",100,330,-90],["T",300,330,90],["y",200,330],["f",200,180],["f",330,440],["f",60,450],["v",200,260]],"sol":[[200,600],[60,450],[100,390],[100,270],[200,180],[300,270],[300,390],[330,440],[130,575]],"naive":[[200,600],[330,440],[300,390],[300,270],[200,180],[100,270],[100,390],[60,450],[270,575]],"ink":1373,"par":1209},{"n":"Tanuki","hint":"Pass the tanuki without cutting him and he drinks your ink.","s":[200,600],"e":[["u",200,320],["f",200,372],["f",148,320],["f",252,320],["f",200,268],["f",90,170],["f",310,170]],"sol":[[200,600],[200,320],[148,320],[200,268],[252,320],[310,170],[90,170]],"naive":[[200,600],[200,372],[148,320],[200,268],[252,320],[310,170],[90,170],[200,320]],"ink":1016,"par":961,"k":1.12},{"n":"Echo","hint":"The Black Brush follows your last stroke. Do not touch his line.","s":[200,600],"e":[["f",80,480],["f",80,180],["f",320,400],["f",320,200],["f",200,100]],"sol":[[200,600],[80,480],[80,180],[200,100],[320,200],[320,400]],"naive":[[200,600],[320,400],[320,200],[200,100],[80,180],[80,480]],"ink":1229,"par":1083,"echo":[[200,600],[200,340],[20,340]]},{"n":"Ink Well","hint":"Cut the well to refill your brush.","s":[200,600],"e":[["i",200,440],["f",60,500],["f",340,500],["f",60,250],["f",340,250],["f",60,90],["f",340,90]],"sol":[[200,600],[60,500],[200,440],[340,500],[340,250],[60,250],[60,90],[340,90]],"naive":[[200,600],[60,500],[340,500],[340,250],[60,250],[60,90],[340,90]],"ink":1328,"par":1275,"k":1.1},{"n":"Lantern Path","hint":"Deal with the tanuki first.","s":[200,600],"e":[["F"],["u",110,582],["f",60,470],["i",200,330],["f",340,470],["f",60,120],["f",340,120],["f",200,200],["v",270,330],["v",130,330]],"sol":[[200,600],[110,582],[60,470],[200,400],[200,330],[340,470],[340,120],[200,200],[60,120]],"naive":[[200,600],[60,470],[200,400],[200,330],[340,470],[340,120],[200,200],[60,120],[110,582]],"ink":1154,"par":1076,"k":1.1},{"n":"Twin Lords","hint":"Two lords, one gate. Loop each, spare the villager.","s":[200,600],"e":[["L",40,330,165,330],["T",200,330,-90],["L",235,330,360,330],["y",100,330],["y",300,330],["f",100,225],["f",300,225],["f",300,445],["v",100,395]],"sol":[[200,600],[200,420],[200,280],[150,225],[100,225],[25,280],[20,380],[100,450],[190,410],[200,300],[250,225],[300,225],[375,280],[380,380],[300,445],[180,470]],"naive":[[200,600],[200,280],[100,225],[300,225],[375,280],[380,380],[300,445]],"ink":1910,"par":1677},{"n":"Festival Night","hint":"Everything at once, in the dark.","s":[200,600],"e":[["F"],["L",0,330,65,330],["T",100,330,-90],["L",135,330,265,330],["T",300,330,90],["L",335,330,400,330],["y",200,330],["u",200,530],["i",200,150],["f",60,450],["f",330,445],["f",200,90],["f",300,200],["v",200,255],["v",130,560]],"sol":[[200,600],[200,530],[60,450],[100,390],[100,270],[200,150],[200,90],[300,200],[300,390],[330,445],[95,505]],"naive":[[200,600],[60,450],[100,390],[100,270],[200,150],[200,90],[300,200],[300,390],[330,445],[200,530],[95,505]],"ink":1131,"par":1054,"k":1.1},{"n":"The Calligrapher","hint":"Cut his three seals before the ink dries.","boss":1,"phases":[{"s":[200,600],"e":[["j",80,470],["j",330,470],["j",200,130],["K",200,380,200,640,1],["K",60,300,340,300,2],["K",100,200,300,200,3]],"sol":[[200,600],[80,470],[330,470],[200,130]],"naive":[[200,600],[200,130],[80,470],[330,470]],"ink":1001,"par":885},{"s":[200,600],"e":[["L",40,330,165,330],["T",200,330,-90],["L",235,330,360,330],["y",300,330],["j",200,200],["j",330,230],["j",370,450],["K",20,420,150,420,1],["K",230,120,230,260,2]],"sol":[[200,600],[200,280],[200,200],[330,230],[382,330],[370,450],[250,400],[160,385]],"naive":[[200,600],[200,280],[200,200],[330,230],[382,330],[370,450]],"ink":1252,"par":1103},{"s":[200,600],"e":[["j",80,450],["j",330,450],["j",200,100],["K",0,300,150,300,1],["K",250,200,400,200,2]],"sol":[[200,600],[80,450],[330,450],[200,100]],"naive":[[200,600],[200,100],[80,450],[330,450]],"ink":1031,"par":912,"echo":[[200,600],[200,280],[200,200],[330,230],[382,330],[370,450],[250,400],[160,385]]}]}]}
 
 ];
 const FOE_NOTES={
@@ -1710,7 +2382,11 @@ const FOE_NOTES={
   rival:['黒筆','The Black Brush','He paints a stroke toward you while your brush is down. Don’t cross it. Don’t let it arrive.'],
   boatman:['船頭','Boatman','He drifts with the current while your brush is down. Aim at the dotted ghost, one second ahead.'],
   twin:['双生','Twins','Cut one, then the other within a breath. If you wait, both rise and the page is lost.'],
-  dragon:['河龍','River Dragon','Cut his seven segments from head to tail. A cut out of order does nothing.']
+  dragon:['河龍','River Dragon','Cut his seven segments from head to tail. A cut out of order does nothing.'],
+  ghostlord:['幽霊殿','Ghost lord','A cut through him does nothing. Close a loop around his centre.'],
+  tanuki:['狸','Tanuki','If your line leaves his reach before he is cut, he drinks a quarter of your ink.'],
+  inkwell:['硯','Ink well','Cut it and it refills a share of your starting ink, once.'],
+  cseal:['書印','The Calligrapher\'s seal','Cut all three of his seals. His walls break a stroke that touches them.']
 };
 const WARRIORS=[['ronin','Ronin',0],['wanderer','Wanderer',60],['kunoichi','Kunoichi',120],['monk','Basket Monk',160],['shogun','Shogun',240],['fox','Fox Mask',300],['oni','Oni Mask',400],['ghost','Pale Ghost',500]];
 /* each ink: light paper, night paper, red paper */
@@ -1872,7 +2548,7 @@ function resize(){
   SC=Math.min(VW/W,(VH-top-bot)/H,1.75);OX=(VW-W*SC)/2;OY=top+(VH-top-bot-H*SC)/2;
   for(const k in paperCache)delete paperCache[k];
   titleArt=null;
-  if(mode==='play'&&P&&P.room){bakeBg();makeLayers()}
+  if(mode==='play'&&P&&P.room){bakeBg();makeLayers();if(P.room.fog){warmFog(TH);render()}}
   if(mode==='arm')drawPreview();
   fitEndCards();
 }
@@ -1924,7 +2600,7 @@ function bakeBg(){
   (r.waterSpr||[]).forEach(sp=>drawRiverBand(g,sp));
   if(r.mirrorSpr)drawMirrorLine(g,r.mirrorSpr);
   r.walls.forEach((w,i)=>paintWall(g,w,TH,i*7+3));
-  const kinds=({a:'bamboo',b:'lantern',c:'pillar',d:'stump',e:'tourou',e1:'tourou',e2:'tourou',e3:'tourou'}[TH.key]||'tourou');
+  const kinds=({a:'bamboo',b:'lantern',c:'pillar',d:'stump',e:'tourou',e1:'tourou',e2:'tourou',e3:'tourou',f:'tourou'}[TH.key]||'tourou');
   r.rocks.slice().sort((a,b)=>a.y-b.y).forEach((s,i)=>{
     g.globalAlpha=.16;g.fillStyle=TH.ink;g.beginPath();g.arc(s.x,s.y,s.r,0,6.283);g.fill();g.globalAlpha=1;
     const big=s.r>38||i%2;
@@ -1934,9 +2610,12 @@ function bakeBg(){
   g.restore();
 }
 
+const ECHO_MEM={};
+function rememberStroke(pts){if(!pts||pts.length<2)return pts;return pts.map(p=>({x:p.x,y:p.y,t:p.t||0}))}
 /* ===== PLAY ===== */
 const FOOT={foot:36,archer:30,shield:40,ronin:36,monk:40,gunner:30,keg:20,villager:34,wraith:26,oni:68,captain:44,abbot:42,lord:46,rival:40,boatman:36,twin:36,dragon:44};
 Object.assign(FOOT,FOOT_CH5);
+if(typeof FOOT_CH6!=='undefined')Object.assign(FOOT,FOOT_CH6);
 const HEAD={ronin:120,oni:200,captain:150,abbot:128,lord:160,rival:122};
 const Sam={x:0,y:0,pose:'ready',flip:false,dead:false,ghosts:[]};
 let parts=[],pieces=[],booms=[];
@@ -1980,12 +2659,16 @@ function loadPhase(i,intro){
   const live_=room.ents.filter(e=>e.t!=='villager');
   const mean=live_.reduce((a,e)=>a+e.x,0)/(live_.length||1);Sam.flip=mean<room.s.x-6;
   if(P.def&&P.def.boss==='dragon'&&CH5_PHASE_THEMES[i])setTheme(CH5_PHASE_THEMES[i]);
+  if(isCalligrapher(P.def)&&CH6_PHASE_THEMES[i])setTheme(CH6_PHASE_THEMES[i]);
+  room.ink=P.ink||def.ink||0;
+  if(P.def&&P.def.echo){const mem=ECHO_MEM[lid(P.c,P.l)];if(mem&&mem.length>1)attachEcho(room,mem);}
+  if(isCalligrapher(P.def)&&i===2){if(P.calligPrev&&P.calligPrev.length>1)attachEcho(room,P.calligPrev);else if(P.phases[2]&&P.phases[2].echo)attachEcho(room,P.phases[2].echo);else if(P.phases[1]&&P.phases[1].sol)attachEcho(room,pickSol(P.phases[1],1600)||P.phases[1].sol)}
   room.ents.forEach(e=>{
     let typ=e.t,arg=e.t==='gunner'?e.ang:undefined;
     if(e.t==='villager'&&TH.key&&TH.key[0]==='e')typ='villagerc';
     if(e.t==='dragon'){typ=e.ord===0?'dragonHead':e.ord===6?'dragonTail':'dragonBody';arg=e.ord}
     e.spr=foeSprite(typ,PAL,arg);
-    e.flip=e.t==='gunner'?false:(room.s.x<e.x);e.fy=FOOT[e.t]||FOOT_CH5[e.t]||36;e.lx=0;e.ly=0;
+    e.flip=e.t==='gunner'?false:(room.s.x<e.x);e.fy=FOOT[e.t]||(typeof FOOT_CH6!=='undefined'&&FOOT_CH6[e.t])||FOOT_CH5[e.t]||36;e.lx=0;e.ly=0;
   });
   room.ropes.forEach((w,j)=>{w.spr=ropeSprite([w.ax,w.ay],[w.bx,w.by],PAL,j+2);w.fade=1});
   room.waterSpr=(room.waters||[]).map((z,j)=>riverBandSprite(TH,z.x,z.y,z.w,z.h,j+3));
@@ -1995,7 +2678,7 @@ function loadPhase(i,intro){
   const tb={};
   room.ents.forEach(e=>{if(e.t==='twin')(tb[e.pair]=tb[e.pair]||[]).push(e)});
   Object.keys(tb).forEach(k=>{const a=tb[k];if(a.length>=2)room.twinSpr[k]=twinsCordSprite([a[0].x,a[0].y],[a[1].x,a[1].y],PAL,k*3+2)});
-  bakeBg();makeLayers();
+  bakeBg();makeLayers();if(room.fog){warmFog(TH);render()}
   $('dead').hidden=true;$('res').hidden=true;
   $('bRedo').style.visibility=P.kind==='story'?'visible':'hidden';
   $('hudN').textContent=P.kind==='story'?String(P.c*10+P.l+1):String(P.run.room+1);
@@ -2031,7 +2714,7 @@ function toWorld(ev){const r=cv.getBoundingClientRect();return{x:(ev.clientX-r.l
 function beginStroke(p){
   if(P.st!=='plan')return;
   if(hyp(p.x-Sam.x,p.y-Sam.y)>52){P.pulse=1;setHint('Start on your samurai.');Snd.snag();return}
-  P.st='draw';P.touched=true;P.pts=[{x:Sam.x,y:Sam.y,w:2.2,d:.12,s:0,t:0}];P.lc=0;P.lseed=(Math.random()*1e6)|0;P.used=0;P.an=null;P.lw=6;P.dirty=true;P.dry=false;P.room.T=0;P.room.spreadT=null;P.twinClock=null;
+  P.st='draw';P.touched=true;P.pts=[{x:Sam.x,y:Sam.y,w:2.2,d:.12,s:0,t:0}];P.lc=0;P.lseed=(Math.random()*1e6)|0;P.used=0;P.an=null;P.lw=6;P.dirty=true;P.dry=false;P.room.T=0;P.room.spreadT=null;P.twinClock=null;P.tanukiTax=0;P.broke=null;P.wellGot=0;P.tanukiIn={};
   setHint(P.phase===0&&P.kind==='story'?(P.def.hint||''):'');
   lg.save();lg.setTransform(1,0,0,1,0,0);lg.clearRect(0,0,live.width,live.height);lg.restore();
   resetCh5Buf();
@@ -2058,10 +2741,24 @@ function brushStep(x,y){
   const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2},mul=inWater(r,mid)?2:1,cost=d*mul;
   const left=P.ink-P.used;if(left<=.5){P.dry=true;return false}
   if(cost>left){const t=left/cost;b={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};d=hyp(b.x-a.x,b.y-a.y)}
+  for(const g of r.torii||[])if(toriiBack(g,a,b)){P.dry=true;P.broke='torii';stampLive(a,b,d);P.pts.push(b);P.used+=d*mul;b.s=P.used;b.t=r.T;P.dirty=true;return false}
+  if(hitsKanji(r,a,b,r.T||0)){P.dry=true;P.broke='kanji';stampLive(a,b,d);P.pts.push(b);P.used+=d*mul;b.s=P.used;b.t=r.T;P.dirty=true;return false}
   stampLive(a,b,d);if(mul>1)b.w=(b.w||P.lw)*.78;
   P.pts.push(b);P.used+=d*mul;b.s=P.used;b.t=r.T;P.dirty=true;P.brushV=(P.brushV||0)+d;
+  ch6BrushFx(r,b);
   flushLive();
   return true;
+}
+function ch6BrushFx(r,b){
+  const ring=P.tanukiIn||(P.tanukiIn={});
+  if(!P.tanukiTax)for(const e of r.ents){if(e.t!=='tanuki'||e.dead)continue;
+    const near=hyp(b.x-e.x,b.y-e.y)<TANUKI_REACH;
+    if(near)ring[e.id]=1;
+    else if(ring[e.id]){ring[e.id]=0;
+      const cut=(P.pts||[]).some(p=>hyp(p.x-e.x,p.y-e.y)<e.r)||(P.an&&P.an.st&&P.an.st[e.id]&&P.an.st[e.id].doneS<Infinity);
+      if(!cut){P.used=P.used+(P.ink-P.used)*TANUKI_TAX;P.tanukiTax=1;Snd.snag();P.shake=Math.max(P.shake||0,REDUCE?0:4);break}}}
+  for(const e of r.ents){if(e.t!=='inkwell'||e.dead||e.usedWell)continue;
+    if(hyp(b.x-e.x,b.y-e.y)<e.r){e.usedWell=1;if(e.splashT==null){e.splashT=0;e.splashK=0}P.used=Math.max(0,P.used-WELL_REFILL*P.ink);P.wellGot=1;Snd.tick&&Snd.tick(0);break}}
 }
 function addPoint(p){
   const x=clamp(p.x,5,W-5),y=clamp(p.y,5,H-5),a=P.pts[P.pts.length-1],d=hyp(x-a.x,y-a.y);
@@ -2162,7 +2859,11 @@ function onCut(i,isLast){
   cutHaptic(isLast);
 }
 function slice(m,col){
-  const e=m.e,c=m.contacts[m.contacts.length-1],p=m.p;
+  const e=m.e;
+  /* draw-only: ghost lords fade in place; ink wells stay on the page and splash. No change to analyze, hit tests, kill counts or the win check. */
+  if(e.t==='ghostlord'){e.dead=true;e.dk=0;e.dT=0;return}
+  if(e.t==='inkwell'){e.usedWell=1;if(e.splashT==null){e.splashT=0;e.splashK=0}e.dead=true;return}
+  const c=m.contacts[m.contacts.length-1],p=m.p;
   const cx=c?c.x:p.x,cy=c?c.y:p.y;let dx=c?c.dx:Math.random()-.5,dy=c?c.dy:Math.random()-.5;const l=hyp(dx,dy)||1;dx/=l;dy/=l;
   /* cuts run along the stroke; keep the angle lively if it is dead vertical */
   const nx=-dy,ny=dx,fx=p.x+e.lx,fy=p.y+e.fy;
@@ -2226,6 +2927,7 @@ function flourish(){
 }
 function die(why){
   if(P.st==='dead')return;
+  if(P.def&&P.def.echo&&P.pts&&P.pts.length>2)ECHO_MEM[lid(P.c,P.l)]=rememberStroke(P.pts);
   P.st='dead';P.why=why;P.deaths++;Sam.dead=true;P.t=0;Snd.brush(0);Snd.die();P.shake=REDUCE?0:10;vib(70);
   const c=TH.red;blotOn(sg,Sam.x,Sam.y+10,20,c,.95,Math.random);drops(Sam.x,Sam.y,1,-.4,44,c,360);
   lg.save();lg.setTransform(1,0,0,1,0,0);lg.clearRect(0,0,live.width,live.height);lg.restore();
@@ -2246,7 +2948,10 @@ const DEATH={
   rival:['You crossed the Black Brush.','Go around his stroke.'],
   rivalhit:['His stroke reached you.','Time moves while your brush is down.'],
   wet:['The rain spread your line into a villager.','Give them a wide berth, then lift.'],
-  twins:['The other twin rose.','After one falls, the other must fall within a breath.']
+  twins:['The other twin rose.','After one falls, the other must fall within a breath.'],
+  torii:['The torii turned you back.','Cross only in the direction of the arrow.'],
+  kanji:['His wall stopped your brush.','Move before the stroke lands, or go around it.'],
+  ink:['Your brush ran dry.','Cut a well, or cut the tanuki before he drinks.']
 };
 function showDead(why){
   let t=DEATH[why];if(typeof t==='function')t=t(P.an?P.an.left:1);
@@ -2269,6 +2974,11 @@ function btn(t,f,cls){const b=document.createElement('button');b.textContent=t;i
 function retry(){if(P.kind==='story')loadPhase(P.phase,false);else startEndless()}
 $('dead').onclick=()=>{if(P&&P.canRetry)retry()};
 function phaseClear(){
+  if(P.pts&&P.pts.length>1){
+    const rec=rememberStroke(P.pts);
+    if(P.def&&P.def.echo)ECHO_MEM[lid(P.c,P.l)]=rec;
+    if(isCalligrapher(P.def)&&P.phase===1)P.calligPrev=rec;
+  }
   P.usedAll+=P.used;P.parAll+=P.par;
   if(P.kind==='end'){P.run.room++;wipe(()=>nextEndless())}
   else if(P.phase<P.phases.length-1)wipe(()=>loadPhase(P.phase+1,false));
@@ -2307,9 +3017,17 @@ function exitPlay(){
 }
 
 /* ----- the frame ----- */
+function tickCh6Draw(dt){
+  if(!P||!P.room)return;
+  for(const e of P.room.ents){
+    if(e.t==='ghostlord'&&e.dead&&e.dT!=null){e.dT+=dt;e.dk=e.dT>=GHOST_DISSOLVE?1:e.dT/GHOST_DISSOLVE}
+    if(e.splashT!=null){e.splashT+=dt;if(e.splashT>=WELL_SPLASH){e.splashT=null;e.splashK=0}else e.splashK=e.splashT/WELL_SPLASH}
+  }
+}
 function update(dt){
   const r=P.room;
   if(P.wipe){const w=P.wipe;w.t+=dt;if(!w.hit&&w.t>.2){w.hit=true;w.cb()}if(w.t>.46)P.wipe=null}
+  tickCh6Draw(dt);
   /* hit-freeze: the whole page holds still for a beat as the blade connects */
   if(P.freeze>0){P.freeze-=dt;return}
   if(P.shake>0)P.shake=Math.max(0,P.shake-dt*34);
@@ -2321,11 +3039,11 @@ function update(dt){
     case'draw':{
       r.T+=dt;
       const v=clamp((P.brushV||0)/(dt*600),0,1);P.brushV=0;Snd.brush(v);
-      if(P.dirty||r.arrows.length||r.riv||r.ents.some(e=>e.drift||e.vx||e.vy)||r.mirror||(r.rains||[]).length){P.an=analyze(r,P.pts);P.dirty=false;liveWarn();
+      if(P.dirty||r.arrows.length||r.riv||r.ents.some(e=>e.drift||e.vx||e.vy||e.t==='ghostlord'||e.t==='tanuki'||e.t==='inkwell')||r.mirror||(r.rains||[]).length||(r.torii&&r.torii.length)||(r.kanji&&r.kanji.length)||(r.riv&&r.riv.echo)){P.an=analyze(r,P.pts);P.dirty=false;liveWarn();
         if(P.an&&P.an.dragonMiss&&now-(P.dMissT||0)>.18){P.dMissT=now;Snd.snag();P.shake=Math.max(P.shake||0,REDUCE?0:2)}}
       let close=1e9;
       for(const a of r.arrows){const t=arrowTip(a,r.T),d=hyp(t.x-Sam.x,t.y-Sam.y);close=Math.min(close,d);if(d<14){die('shot');return}}
-      if(r.riv){const rem=(1-r.T/r.riv.secs)*r.riv.len;close=Math.min(close,rem);if(r.T>=r.riv.secs){die('rivalhit');return}}
+      if(r.riv&&!r.riv.echo){const rem=(1-r.T/r.riv.secs)*r.riv.len;close=Math.min(close,rem);if(r.T>=r.riv.secs){die('rivalhit');return}}
       if(close<1e8){P.heart-=dt;if(P.heart<=0){Snd.heart();P.heart=clamp(close/260,.22,.8)}}
       break;}
     case'dash':{
@@ -2354,7 +3072,7 @@ function update(dt){
       P.t+=dt;const an=P.an;
       if(an.fail==='blast'||an.fail==='vblast'){if(P.t>.28){die(an.fail);return}}
       else if(P.afterWet&&P.t>.4){P.st='wetwait';P.t=0;P.room.spreadT=(P.room.T||0)}
-      else if(an.left>0&&P.t>.2){P.st='lunge';P.t=0;an.st.forEach(m=>{if(!m.e.dead&&m.e.t!=='keg'&&m.e.t!=='villager')m.lunge=1})}
+      else if(an.left>0&&P.t>.2){P.st='lunge';P.t=0;an.st.forEach(m=>{if(!m.e.dead&&m.e.t!=='keg'&&m.e.t!=='villager'&&m.e.t!=='inkwell')m.lunge=1})}
       else if(an.win&&P.t>(P.kind==='end'?.8:1.25)&&!P.left){P.left=1;phaseClear();P.left=0;if(P.st==='split')P.st='wait'}
       break;}
     case'wetwait':{
@@ -2387,7 +3105,7 @@ function liveWarn(){
   if(f&&WARN[f])setHint(WARN[f]+BACK,true);
   else if(P.used>0)setHint(P.dry?'Brush dry. Lift to strike, or drag back to the samurai.':(P.used/P.ink>.86?'Ink running out.':''),false);
 }
-const WARN={shield:'Shield. Enter from the other side.',arrow:'Your line crosses an arrow.',ward:'Rope. Cut the monk first.',lane:'Line of fire. Cut the gunner first.',villager:'That is a villager.',rival:'That is his stroke.',blast:'You would finish inside the ring.',vblast:'That blast reaches a villager.',wet:'Rain will spread that line into a villager.',twins:'The other twin must be cut in the same breath.'};
+const WARN={shield:'Shield. Enter from the other side.',arrow:'Your line crosses an arrow.',ward:'Rope. Cut the monk first.',lane:'Line of fire. Cut the gunner first.',villager:'That is a villager.',rival:'That is his stroke.',blast:'You would finish inside the ring.',vblast:'That blast reaches a villager.',wet:'Rain will spread that line into a villager.',twins:'The other twin must be cut in the same breath.',torii:'Wrong way through the torii.',kanji:'That wall will be solid.',ink:'You will run out of ink.'};
 const BACK=' Drag back to your samurai to cancel.';
 function drawPiece(g,p,alpha){
   g.save();g.translate(p.cx+p.ox,p.cy+p.oy);g.rotate(p.rot);
@@ -2436,12 +3154,15 @@ function render(){
     if(e.drift){g.strokeStyle=TH.ink;g.globalAlpha=.34;g.lineWidth=1.6;g.setLineDash([2,8]);g.beginPath();g.moveTo(e.ax,e.ay);g.lineTo(e.bx,e.by);g.stroke();g.setLineDash([]);g.globalAlpha=1}
   });
   if(r.riv){
-    const v=rivalVisible(r,r.T);
-    if(v.length>1)drawRival(g,r,v.length);
-    g.strokeStyle=TH.ink;g.globalAlpha=.22;g.lineWidth=2;g.setLineDash([3,8]);g.beginPath();r.riv.pts.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y));g.stroke();g.setLineDash([]);g.globalAlpha=1;
+    const along=r.riv.echo?pathLen(P.pts||[]):null;
+    const v=rivalVisible(r,r.T,null,along);
+    if(v.length>1){drawRival(g,r,v.length);if(r.riv.echo)drawEchoHead(g,v[v.length-1])}
+    if(r.riv.echo)drawEchoPath(g,r.riv.pts);else{g.strokeStyle=TH.ink;g.globalAlpha=.22;g.lineWidth=2;g.setLineDash([3,8]);g.beginPath();r.riv.pts.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y));g.stroke();g.setLineDash([]);g.globalAlpha=1}
   }
   if(TH.key&&TH.key[0]==='e')drawRain(g,TH,now,W,H,.9);
   (r.waterSpr||[]).forEach(sp=>drawCurrent(g,sp,now,40));
+  (r.torii||[]).forEach((g0,i)=>drawTorii(g,g0,TH,i+3));
+  (r.kanji||[]).forEach(w=>drawCalligrapherWall(g,w,r.T||0,KANJI_AHEAD,TH));
   if(P.pts&&P.pts.length>1){
     if(r.mirror)drawBufferedReflection(g,r);
     if((r.rains||[]).length)drawBakedWet(g,r);
@@ -2465,7 +3186,8 @@ function render(){
     g.globalAlpha=1;
   }
   /* figures, far to near */
-  const list=r.ents.filter(e=>!e.dead).map(e=>{const p=entPos(e,r.T);return{e,x:p.x+e.lx,y:p.y+e.ly,z:p.y+e.fy}});
+  const shown=e=>!e.dead||(e.t==='ghostlord'&&e.dk!=null&&e.dk<1)||(e.t==='inkwell'&&(e.usedWell||e.splashT!=null||e.dead));
+  const list=r.ents.filter(shown).map(e=>{const p=entPos(e,r.T);return{e,x:p.x+e.lx,y:p.y+e.ly,z:p.y+e.fy}});
   list.push({sam:1,x:Sam.x,y:Sam.y,z:Sam.y+34});
   list.sort((a,b)=>a.z-b.z);
   for(const o of list){
@@ -2476,6 +3198,9 @@ function render(){
     if(e.t==='wraith'){drawSprite(g,e.spr,fx,fy+Math.sin(now*2)*2,SCALE,e.flip,.92)}
     else if(e.t==='boatman')drawBoatman(g,e,fx,fy,e.flip);
     else if(e.t==='twin')drawTwin(g,e,fx,fy,e.flip);
+    else if(e.t==='ghostlord')drawGhostLord(g,e,fx,fy,e.flip,e.dead);
+    else if(e.t==='tanuki')drawTanuki(g,e,fx,fy,e.flip);
+    else if(e.t==='inkwell'){drawInkWell(g,e,fx,fy,e.usedWell||e.dead);if(e.splashT!=null)paintInkWellSplash(g,fx,fy,e.splashK||0)}
     else drawSprite(g,e.spr,fx,fy,SCALE,e.flip);
     if(e.t==='shield'){
       /* the covered half: nothing enters from here */
@@ -2498,6 +3223,8 @@ function render(){
     let next=dsegs.length;for(let i=0;i<dsegs.length;i++)if(!dsegs[i].dead){next=i;break}
     drawDragon(g,dsegs,TH,next);
   }
+  if(r.fog){const tip=(P.pts&&P.pts.length)?P.pts[P.pts.length-1]:(P.st==='plan'?null:{x:Sam.x,y:Sam.y});
+    paintFog(g,TH,tip||{x:r.s.x,y:r.s.y},FOG_R,W,H,r.fogMask)}
   /* order stamps on everything the stroke has reached */
   if(an&&P.st==='draw'){
     const hit=an.st.filter(m=>m.hits>0&&!m.e.dead).sort((a,b)=>a.contacts[0].s-b.contacts[0].s);
@@ -2621,7 +3348,7 @@ function refreshTitle(){
   const any=Object.keys(SV.lv).length;
   $('playL').textContent=any?'Continue':'Begin';
   const n=Object.values(SV.lv).reduce((a,r)=>a+(r.s||[]).filter(Boolean).length,0);
-  $('playS').textContent=any?n+' of 150 seals':'50 pages';
+  $('playS').textContent=any?n+' of 180 seals':'60 pages';
   $('endS').textContent=SV.best?'Best: '+SV.best+' rooms':'One life';
   $('armS').textContent=SV.koku+' koku';
   $('bSnd').textContent=SV.snd?'Sound on':'Sound off';
